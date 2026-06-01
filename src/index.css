@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-slate-850: #151e2e;
+  --color-slate-950: #0a0f18;
+
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
+  --radius-5xl: 48px;
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+  --animate-spin-slow: spin 25s linear infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.04); }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans selection:bg-blue-500/20 antialiased;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white/60 backdrop-blur-[40px] border border-white/80 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.05)];
+  }
+
+  .glass-card {
+    @apply bg-white/50 backdrop-blur-xl border border-white/70 shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_15px_40px_rgba(0,0,0,0.08)] hover:-translate-y-1;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-br from-[#00C6FF] to-[#0072FF] text-white font-black uppercase tracking-widest px-6 py-3 rounded-2xl shadow-[0_10px_20px_rgba(0,198,255,0.3)] hover:brightness-110 active:scale-95 transition-all;
+  }
+
+  .btn-glass {
+    @apply bg-white/20 hover:bg-white/30 backdrop-blur-xl border border-white/40 font-black uppercase tracking-widest px-6 py-3 rounded-2xl active:scale-95 transition-all;
+  }
+
+  .label-meta {
+    @apply text-[10px] font-black uppercase tracking-widest opacity-60;
+  }
+}
+
+/* Custom Background Orbs */
+.bg-scene {
+  @apply fixed inset-0 -z-10 overflow-hidden bg-[#f8f9fa];
+}
+
+.orb {
+  @apply absolute rounded-full blur-[160px];
+}
+
+.orb-1 {
+  @apply top-[-10%] left-[-10%] w-[70vw] h-[70vw] bg-blue-500/20 animate-spin-slow;
+}
+
+.orb-2 {
+  @apply bottom-[-10%] right-[-10%] w-[60vw] h-[60vw] bg-cyan-400/20 animate-[spin_20s_linear_infinite_reverse];
+}
+
+.orb-3 {
+  @apply top-[30%] left-[30%] w-[40vw] h-[40vw] bg-violet-400/15 animate-pulse-glow;
+}
+
+.grain {
+  @apply fixed inset-0 pointer-events-none opacity-[0.03] contrast-150 mix-blend-overlay -z-10;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+

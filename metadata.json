@@ -1,0 +1,6 @@
+{
+  "name": "Gamme Builder",
+  "description": "Transformez vos fiches multimodales de terrain en gammes d'opérations industrielles structurées via IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

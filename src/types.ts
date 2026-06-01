@@ -1,0 +1,60 @@
+export interface Fiche {
+  _id: string;
+  app_identifier: string;
+  data_type: string;
+  description: string;
+  json_data: {
+    sessionId?: string;
+    isComplete?: boolean;
+    author: {
+      fullname: string;
+      email: string;
+    };
+    formData: {
+      numero_maximo?: string;
+      [key: string]: any;
+    };
+    json_source: {
+      type: string;
+      title: string;
+      description: string;
+      transcription?: string;
+      media_url?: string;
+      created_at: string;
+    }[];
+    app_identifier: string;
+    createdAt: string;
+  };
+}
+
+export interface OperationStep {
+  op: number;
+  description: string;
+}
+
+export interface Gamme {
+  _id?: string;
+  data_type: 'gammes';
+  description: string;
+  json_data: {
+    fiche_id: string;
+    machine_number: string;
+    steps: OperationStep[];
+    app_identifier: string;
+    generated_at: string;
+  };
+}
+
+export interface SystemPrompt {
+  _id?: string;
+  data_type: 'prompts';
+  description: string;
+  json_data: {
+    content: string;
+    version: number;
+    app_identifier: string;
+    is_active: boolean;
+  };
+}
+
+export const APP_ID = 'gamme-builder-2026';
