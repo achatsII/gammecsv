@@ -57,4 +57,4 @@ export interface SystemPrompt {
   };
 }
 
-export const APP_ID = 'gamme-builder-2026';
+export const APP_ID = 'gammecsv';

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './lib/api';
+import { authStore } from './utils/authStore';
+import { checkAndProactiveRefresh, handleAuthCallback } from './utils/authService';
+import { LoginScreen } from './components/LoginScreen';
 import { Fiche, Gamme, SystemPrompt, APP_ID } from './types';
 import { 
   FileText, 
@@ -18,7 +21,9 @@ import {
   Settings,
   AlertCircle,
   Plus,
-  Trash
+  Trash,
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -168,6 +173,8 @@ const Badge = ({ children, variant = 'blue' }: { children: React.ReactNode, vari
 // --- Application ---
 
 export default function App() {
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<'fiches' | 'gammes' | 'settings'>('fiches');
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [gammes, setGammes] = useState<Gamme[]>([]);
@@ -181,7 +188,7 @@ export default function App() {
     setLoading(true);
     try {
       const [fichesData, gammesData, promptData] = await Promise.all([
-        api.filterFiches(APP_ID).catch(() => []),
+        api.filterFiches([APP_ID]).catch(() => []),
         api.getGammes().catch(() => []),
         api.getPrompts().catch(() => [])
       ]);
@@ -205,7 +212,42 @@ export default function App() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    const initAuth = async () => {
+      await authStore.hydrate();
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('authorization_code');
+      const state = urlParams.get('state');
+
+      if (code && state) {
+        const success = await handleAuthCallback(code, state);
+        if (success) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setIsAuthenticated(true);
+        }
+      } else {
+        const valid = await checkAndProactiveRefresh();
+        setIsAuthenticated(valid);
+      }
+      
+      setIsAuthChecking(false);
+    };
+
+    initAuth();
+
+    const unsubscribe = authStore.subscribe((token) => {
+      setIsAuthenticated(!!token);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => { 
+    if (isAuthenticated) {
+      refresh(); 
+    }
+  }, [isAuthenticated]);
 
   const handleGenerate = async (fiche: Fiche) => {
     if (!currentPrompt) return;
@@ -308,6 +350,14 @@ export default function App() {
     finally { setLoading(false); }
   };
 
+  if (isAuthChecking) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="w-10 h-10 text-blue-600 animate-spin" /></div>;
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
+
   return (
     <div className="min-h-screen">
       <div className="bg-scene"><div className="orb orb-1"/><div className="orb orb-2"/><div className="orb orb-3"/><div className="absolute inset-0 backdrop-blur-[80px]"/></div>
@@ -327,10 +377,24 @@ export default function App() {
               {t === 'settings' ? 'Config' : t}
             </button>
           ))}
+          <div className="w-px bg-white/30 mx-2" />
+          <button 
+            onClick={() => { authStore.clear(); window.location.reload(); }}
+            className="px-6 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-2"
+          >
+            <LogOut className="w-4 h-4" /> DÉCONNEXION
+          </button>
         </nav>
 
         <div className="flex items-center gap-4">
-           {loading && <Loader2 className="w-5 h-5 animate-spin opacity-40 text-blue-600" />}
+           <button 
+             onClick={refresh}
+             disabled={loading}
+             className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-white/60 transition-all hover:scale-105 active:scale-95 group shadow-sm disabled:opacity-50"
+             title="Actualiser les données"
+           >
+              <RefreshCw className={`w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-slate-800 ${loading ? 'animate-spin' : ''}`} />
+           </button>
            <div className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60">
               <Database className="w-5 h-5 opacity-40" />
            </div>
@@ -359,19 +423,19 @@ export default function App() {
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{f.json_data.formData.numero_maximo || 'ID INCONNU'}</h3>
+                          <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{f.json_data?.formData?.numero_maximo || f.app_identifier || 'ID INCONNU'}</h3>
                           <Badge variant={f._id.startsWith('fiche-demo') ? 'slate' : 'blue'}>{f._id.startsWith('fiche-demo') ? 'DÉMO' : 'LIVE'}</Badge>
                         </div>
-                        <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description}"</p>
+                        <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description || 'Sans description'}"</p>
                       </div>
 
                       <div className="flex items-center gap-8 px-8 border-x border-slate-100/50">
                         <div className="flex flex-col items-center">
-                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{f.json_data.json_source.filter(s => s.transcription).length}</span>
+                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{f.json_data?.json_source?.filter(s => s.transcription)?.length || 0}</span>
                           <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">SEGMENTS</span>
                         </div>
                         <div className="flex flex-col items-center">
-                          <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{f.json_data.author.fullname.split(' ')[0]}</span>
+                          <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{f.json_data?.author?.fullname?.split(' ')[0] || 'Inconnu'}</span>
                           <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">AUTEUR</span>
                         </div>
                       </div>
