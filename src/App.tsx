@@ -23,28 +23,44 @@ import {
   Plus,
   Trash,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  Search,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Constants & Templates ---
 
-const DEFAULT_PROMPT = `Tu es un expert en maintenance industrielle. Ta tâche est de transformer des transcriptions audio de terrain en une gamme d'opérations structurée.
+const DEFAULT_PROMPT = `Tu es un expert en maintenance industrielle spécialisé dans la création de gammes d'opérations. Ta tâche est d'analyser des transcriptions audio de terrain enregistrées par des techniciens lors d'inspections, et de les transformer en une gamme d'opérations formelle et structurée.
 
-FORMAT DE SORTIE (JSON EXACT) :
+FORMAT DE SORTIE STRICT (JSON SCHEMA) :
+Tu dois impérativement respecter la structure exacte ci-dessous. Ne crée JAMAIS d'autres champs.
+
 {
-  "machine_number": "ID_MACHINE",
+  "machine_number": "ID de la machine extrait de l'audio",
+  "metadata": [],
   "steps": [
-    { "op": 10, "description": "ACTION DIRECTE EN MAJUSCULES" },
-    { "op": 20, "description": "SUIVANTE..." }
+    {
+      "op": 10,
+      "description": "Action principale à effectuer",
+      "custom_fields": [
+        {
+          "key": "Temps",
+          "value": "0h 15min"
+        }
+      ]
+    }
   ]
 }
 
-RÈGLES DE RÉDACTION :
-1. Utilise des numéros d'opération par incréments de 10 (10, 20, 30).
-2. Utilise des verbes à l'infinitif (VALIDER, INSPECTER, NETTOYER).
-3. Soyez concis et utilisez des majuscules.
-4. Identifie le numéro de machine à partir des données de formulaire ou du contexte audio.`;
+RÈGLES DE RÉDACTION OBLIGATOIRES :
+1. NUMÉROTATION ("op") : Les opérations doivent être numérotées par incréments de 10 (ex: 10, 20, 30, 40). S'il y a une instruction intermédiaire, utilise un incrément de 5 (ex: 15, 25). N'utilise jamais d'autres valeurs.
+2. DESCRIPTION ("description") : Fournis l'action principale de façon concise. Utilise une casse normale avec majuscule initiale (ex: "Vérifier le niveau d'huile"). Utilise des verbes d'action à l'infinitif.
+
+CHAMP "TEMPS" OBLIGATOIRE :
+- Dans la liste "custom_fields" de CHAQUE étape, tu DOIS inclure exactement et uniquement un objet avec la clé "Temps".
+- Estime la durée de façon réaliste sous le format "Xh Ymin" (ex: "0h 15min").
+- Si le temps n'est pas spécifié, la valeur DOIT être "INCONNU".`;
 
 // --- Mock Data (Demo) ---
 
@@ -186,6 +202,63 @@ export default function App() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<SystemPrompt | null>(null);
+  const [newlyGeneratedTime, setNewlyGeneratedTime] = useState<string | null>(null);
+  const [ficheSearch, setFicheSearch] = useState('');
+  const [gammeSearch, setGammeSearch] = useState('');
+
+  const filteredFiches = fiches.filter(f => {
+    if (!ficheSearch) return true;
+    const searchLower = ficheSearch.toLowerCase();
+    
+    const maximo = f.json_data?.formData?.numero_maximo || '';
+    const desc = f.description || '';
+    const author = f.json_data?.author?.fullname || '';
+    
+    if (maximo.toLowerCase().includes(searchLower)) return true;
+    if (desc.toLowerCase().includes(searchLower)) return true;
+    if (author.toLowerCase().includes(searchLower)) return true;
+    
+    if (f.json_data?.json_source) {
+      for (const src of f.json_data.json_source) {
+        if (src.title?.toLowerCase().includes(searchLower)) return true;
+        if (src.transcription?.toLowerCase().includes(searchLower)) return true;
+      }
+    }
+    
+    return false;
+  });
+
+  const filteredGammes = gammes.filter(g => {
+    if (!gammeSearch) return true;
+    const searchLower = gammeSearch.toLowerCase();
+    
+    const machine = g.json_data.machine_number || '';
+    const desc = g.description || '';
+    
+    if (machine.toLowerCase().includes(searchLower)) return true;
+    if (desc.toLowerCase().includes(searchLower)) return true;
+    
+    if (g.json_data.metadata) {
+      for (const meta of g.json_data.metadata) {
+        if (meta.key.toLowerCase().includes(searchLower)) return true;
+        if (meta.value.toLowerCase().includes(searchLower)) return true;
+      }
+    }
+    
+    if (g.json_data.steps) {
+      for (const step of g.json_data.steps) {
+        if (step.description.toLowerCase().includes(searchLower)) return true;
+        if (step.custom_fields) {
+          for (const field of step.custom_fields) {
+            if (field.key.toLowerCase().includes(searchLower)) return true;
+            if (field.value.toLowerCase().includes(searchLower)) return true;
+          }
+        }
+      }
+    }
+    
+    return false;
+  });
 
   const refresh = async () => {
     setLoading(true);
@@ -200,16 +273,30 @@ export default function App() {
       setGammes(gammesData);
       setPrompts(promptData);
 
-      if (!currentPrompt) {
-        const active = promptData.find(p => p.json_data.is_active) || {
-          data_type: 'prompts',
-          description: 'Version Initiale',
-          json_data: { content: DEFAULT_PROMPT, version: 1, app_identifier: APP_ID, is_active: true }
-        };
-        setCurrentPrompt(active as SystemPrompt);
+      if (!currentPrompt || !currentPrompt._id) {
+        let match = null;
+        if (currentPrompt) {
+          match = promptData.find(p => p.description === currentPrompt.description && p.json_data.content === currentPrompt.json_data.content);
+        }
+        
+        if (match) {
+          setCurrentPrompt(match as SystemPrompt);
+        } else {
+          const active = promptData.find(p => p.json_data.is_active) || promptData[0] || {
+            data_type: 'prompts',
+            description: 'Version Initiale',
+            json_data: { content: DEFAULT_PROMPT, version: 1, app_identifier: APP_ID, is_active: true }
+          };
+          setCurrentPrompt(active as SystemPrompt);
+        }
       } else {
         const updated = promptData.find(p => p._id === currentPrompt._id);
-        if (updated) setCurrentPrompt(updated as SystemPrompt);
+        if (updated) {
+          setCurrentPrompt(updated as SystemPrompt);
+        } else {
+          const active = promptData.find(p => p.json_data.is_active) || promptData[0];
+          if (active) setCurrentPrompt(active as SystemPrompt);
+        }
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -252,20 +339,37 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (newlyGeneratedTime) {
+      const handler = () => setNewlyGeneratedTime(null);
+      const timer = setTimeout(() => {
+        window.addEventListener('click', handler);
+      }, 100);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('click', handler);
+      };
+    }
+  }, [newlyGeneratedTime]);
+
   const handleGenerate = async (fiche: Fiche) => {
-    if (!currentPrompt) return;
+    const activePrompt = prompts.find(p => p.json_data.is_active);
+    if (!activePrompt) {
+      console.warn("Aucune instruction système active trouvée, utilisation du prompt en cours d'édition ou par défaut.");
+    }
+    
+    const promptToUse = activePrompt || currentPrompt;
+    if (!promptToUse) return;
+
     setGenerating(fiche._id);
     
-    const transcriptions = fiche.json_data.json_source
-      .filter(s => s.transcription)
-      .map(s => s.transcription)
-      .join('\n');
-    
-    const prompt = `FICHE DE TERRAIN:\nMachine: ${fiche.json_data.formData.numero_maximo}\nDescription: ${fiche.description}\nAudios:\n${transcriptions}`;
+    // Convertir l'objet fiche entier en chaîne JSON pour l'envoyer à l'IA
+    const prompt = JSON.stringify(fiche, null, 2);
 
     try {
-      const gams = await api.askAI(prompt, currentPrompt.json_data.content);
+      const gams = await api.askAI(prompt, promptToUse.json_data.content);
       if (gams) {
+        const genTime = new Date().toISOString();
         const payload: Omit<Gamme, '_id'> = {
           data_type: 'gammes',
           description: `Gamme générée - ${gams.machine_number}`,
@@ -274,10 +378,11 @@ export default function App() {
             machine_number: gams.machine_number,
             steps: gams.steps,
             app_identifier: APP_ID,
-            generated_at: new Date().toISOString()
+            generated_at: genTime
           }
         };
         await api.saveGamme(payload);
+        setNewlyGeneratedTime(genTime);
         await refresh();
         setActiveTab('gammes');
       }
@@ -285,12 +390,40 @@ export default function App() {
     finally { setGenerating(null); }
   };
 
-  const handleUpdateStep = (gammeId: string, stepIndex: number, newDesc: string) => {
+  const handleUpdateStep = (gammeId: string, stepIndex: number, field: 'description' | 'op', newValue: string | number) => {
     setGammes(prev => prev.map(g => {
       if (g._id === gammeId) {
         const newSteps = [...g.json_data.steps];
-        newSteps[stepIndex] = { ...newSteps[stepIndex], description: newDesc };
+        newSteps[stepIndex] = { ...newSteps[stepIndex], [field]: newValue };
         return { ...g, json_data: { ...g.json_data, steps: newSteps } };
+      }
+      return g;
+    }));
+  };
+
+  const handleUpdateCustomField = (gammeId: string, stepIndex: number, fieldIndex: number, newValue: string) => {
+    setGammes(prev => prev.map(g => {
+      if (g._id === gammeId) {
+        const newSteps = [...g.json_data.steps];
+        const newCustomFields = [...(newSteps[stepIndex].custom_fields || [])];
+        if (newCustomFields[fieldIndex]) {
+          newCustomFields[fieldIndex] = { ...newCustomFields[fieldIndex], value: newValue };
+          newSteps[stepIndex] = { ...newSteps[stepIndex], custom_fields: newCustomFields };
+        }
+        return { ...g, json_data: { ...g.json_data, steps: newSteps } };
+      }
+      return g;
+    }));
+  };
+
+  const handleUpdateMetadata = (gammeId: string, metaIndex: number, newValue: string) => {
+    setGammes(prev => prev.map(g => {
+      if (g._id === gammeId && g.json_data.metadata) {
+        const newMetadata = [...g.json_data.metadata];
+        if (newMetadata[metaIndex]) {
+          newMetadata[metaIndex] = { ...newMetadata[metaIndex], value: newValue };
+        }
+        return { ...g, json_data: { ...g.json_data, metadata: newMetadata } };
       }
       return g;
     }));
@@ -320,10 +453,48 @@ export default function App() {
 
   const exportCSV = () => {
     const targets = gammes.filter(g => selectedGammes.includes(g._id!));
-    let csv = "Machine,Operation,Description\n";
+    
+    // Discover all unique custom field keys across metadata and step custom_fields
+    const customKeysSet = new Set<string>();
     targets.forEach(g => {
+      if (g.json_data.metadata) {
+        g.json_data.metadata.forEach(m => customKeysSet.add(m.key));
+      }
       g.json_data.steps.forEach(s => {
-        csv += `"${g.json_data.machine_number}","${s.op}","${s.description.replace(/"/g, '""')}"\n`;
+        if (s.custom_fields) {
+          s.custom_fields.forEach(f => customKeysSet.add(f.key));
+        }
+      });
+    });
+    
+    const customKeys = Array.from(customKeysSet);
+    let csv = `Machine,Operation,Description${customKeys.length > 0 ? ',' + customKeys.join(',') : ''}\n`;
+    
+    targets.forEach(g => {
+      // Create a map of top-level metadata for easy access
+      const metaMap: Record<string, string> = {};
+      if (g.json_data.metadata) {
+        g.json_data.metadata.forEach(m => metaMap[m.key] = m.value);
+      }
+      
+      g.json_data.steps.forEach(s => {
+        const desc = s.description ? s.description.replace(/"/g, '""') : '';
+        
+        // Create a map of step-level custom fields
+        const stepFieldMap: Record<string, string> = {};
+        if (s.custom_fields) {
+          s.custom_fields.forEach(f => stepFieldMap[f.key] = f.value);
+        }
+        
+        let row = `"${g.json_data.machine_number}","${s.op}","${desc}"`;
+        
+        // Append all custom fields (metadata or step specific)
+        customKeys.forEach(key => {
+          let val = stepFieldMap[key] || metaMap[key] || "";
+          row += `,"${val.replace(/"/g, '""')}"`;
+        });
+        
+        csv += row + "\n";
       });
     });
     
@@ -342,7 +513,7 @@ export default function App() {
       data_type: 'prompts' as const,
       description: `Version ${prompts.length + 1}`,
       json_data: {
-        content: currentPrompt ? currentPrompt.json_data.content : DEFAULT_PROMPT,
+        content: 'INSERER NOUVELLE VERSION SYSTEME INSTRUCTION ICI',
         version: prompts.length + 1,
         app_identifier: APP_ID,
         is_active: false
@@ -358,8 +529,17 @@ export default function App() {
       const payload = { ...currentPrompt };
       if (makeActive) {
         payload.json_data.is_active = true;
+        const activePrompts = prompts.filter(p => p.json_data.is_active && p._id !== payload._id);
+        await Promise.all(activePrompts.map(ap => 
+          api.updatePrompt(ap._id!, { ...ap, json_data: { ...ap.json_data, is_active: false } })
+        ));
       }
-      await api.savePrompt(payload);
+      
+      if (payload._id) {
+        await api.updatePrompt(payload._id, payload);
+      } else {
+        await api.savePrompt(payload);
+      }
       await refresh();
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -391,24 +571,22 @@ export default function App() {
       <header className="fixed top-0 inset-x-0 h-20 glass-panel z-50 flex items-center px-10 justify-between">
         <div className="flex items-center gap-3">
           <Activity className="w-8 h-8 text-blue-600" />
-          <h1 className="text-xl font-black tracking-tighter uppercase">Industrial AI <span className="text-blue-600">Gams</span></h1>
+          <h1 className="text-xl font-black tracking-tighter uppercase">Gamme<span className="text-blue-600">Csv</span></h1>
         </div>
 
         <nav className="flex gap-1 bg-white/40 p-1.5 rounded-[20px]">
           {['fiches', 'gammes', 'settings'].map(t => (
-            <button key={t} onClick={() => setActiveTab(t as any)}
+            <button key={t} onClick={() => {
+              setActiveTab(t as any);
+              if (t !== 'gammes') {
+                setExpandedGammes([]);
+              }
+            }}
               className={`px-10 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
             >
               {t === 'settings' ? 'Config' : t}
             </button>
           ))}
-          <div className="w-px bg-white/30 mx-2" />
-          <button 
-            onClick={() => { authStore.clear(); window.location.reload(); }}
-            className="px-6 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-2"
-          >
-            <LogOut className="w-4 h-4" /> DÉCONNEXION
-          </button>
         </nav>
 
         <div className="flex items-center gap-4">
@@ -420,9 +598,14 @@ export default function App() {
            >
               <RefreshCw className={`w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-slate-800 ${loading ? 'animate-spin' : ''}`} />
            </button>
-           <div className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60">
-              <Database className="w-5 h-5 opacity-40" />
-           </div>
+
+           <button 
+             onClick={() => { authStore.clear(); window.location.reload(); }}
+             className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-red-50 hover:border-red-200 transition-all group shadow-sm"
+             title="Déconnexion"
+           >
+             <LogOut className="w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-red-500" />
+           </button>
         </div>
       </header>
 
@@ -432,13 +615,44 @@ export default function App() {
             
             {activeTab === 'fiches' && (
               <div className="space-y-12">
-                <div className="flex flex-col gap-3">
-                   <h2 className="text-7xl font-black tracking-tighter uppercase leading-none">Flux de Terrain</h2>
-                   <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                  <div className="flex flex-col gap-3">
+                     <h2 className="text-7xl font-black tracking-tighter uppercase leading-none flex items-center gap-6"><span>Flux de Terrain</span> <span className="text-3xl text-blue-500 bg-blue-500/10 px-5 py-2 rounded-[20px] translate-y-2">{fiches.length}</span></h2>
+                     <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
+                  </div>
+                  
+                  {/* Search Bar for Fiches */}
+                  <div className="relative w-full md:max-w-md shrink-0">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Search className="w-5 h-5 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={ficheSearch}
+                      onChange={(e) => setFicheSearch(e.target.value)}
+                      placeholder="Rechercher une fiche (n° maximo, description...)"
+                      className="w-full pl-12 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
+                    />
+                    {ficheSearch && (
+                      <button
+                        onClick={() => setFicheSearch('')}
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="flex flex-col gap-4">
-                  {fiches.map(f => {
+                  {filteredFiches.length === 0 && (
+                    <div className="glass-card p-12 text-center rounded-[28px] border-2 border-dashed border-white/40">
+                      <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-bold text-slate-700">Aucune fiche trouvée</h3>
+                      <p className="text-xs text-slate-500 mt-1">Aucune fiche ne correspond à votre recherche "{ficheSearch}".</p>
+                    </div>
+                  )}
+                  {filteredFiches.map(f => {
                     const isExpanded = expandedFiches.includes(f._id);
                     return (
                       <div key={f._id} 
@@ -527,8 +741,13 @@ export default function App() {
 
                                         {src.transcription !== undefined && (
                                           <textarea 
+                                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                                             value={src.transcription}
-                                            onChange={(e) => handleUpdateFicheTranscription(f._id!, i, e.target.value)}
+                                            onChange={(e) => {
+                                              e.target.style.height = 'auto';
+                                              e.target.style.height = e.target.scrollHeight + 'px';
+                                              handleUpdateFicheTranscription(f._id!, i, e.target.value);
+                                            }}
                                             onKeyDown={async (e) => {
                                               if (e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
@@ -541,15 +760,8 @@ export default function App() {
                                             }}
                                             title="Appuyez sur Entrée pour sauvegarder"
                                             className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
-                                            rows={Math.max(1, (src.transcription || '').split('\n').length)}
+                                            rows={1}
                                           />
-                                        )}
-                                        
-                                        {showDescription && (
-                                          <div className="text-[10px] text-slate-500 bg-white/80 p-3 rounded-[10px] border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar">
-                                            <strong className="block text-[8px] uppercase tracking-widest mb-1.5 text-slate-400">ANALYSE</strong>
-                                            <span className="whitespace-pre-wrap">{src.description}</span>
-                                          </div>
                                         )}
                                       </div>
                                     </div>
@@ -571,35 +783,73 @@ export default function App() {
 
             {activeTab === 'gammes' && (
               <div className="space-y-8">
-                <div className="flex items-center justify-between pb-6 border-b border-white/30">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/30">
                    <div className="flex items-center gap-4 text-slate-400">
                       <Archive className="w-8 h-8" />
-                      <h2 className="text-3xl font-black uppercase tracking-tighter">Registre Industriel</h2>
+                      <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Registre Industriel <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
                    </div>
-                   <div className="flex gap-3">
-                      {selectedGammes.length > 0 && (
-                        <>
-                          <button onClick={handleDeleteGammes} title={`Supprimer ${selectedGammes.length} gamme(s)`} className="w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all shadow-sm group">
-                            <Trash className="w-5 h-5 opacity-40 group-hover:opacity-100" />
+                   <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
+                      {/* Search Bar for Gammes */}
+                      <div className="relative w-full md:w-80 shrink-0">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                          <Search className="w-4 h-4 text-slate-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={gammeSearch}
+                          onChange={(e) => setGammeSearch(e.target.value)}
+                          placeholder="Rechercher une gamme..."
+                          className="w-full pl-10 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
+                        />
+                        {gammeSearch && (
+                          <button
+                            onClick={() => setGammeSearch('')}
+                            className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
+                          >
+                            <X className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={exportCSV} className="btn-primary bg-emerald-600 flex items-center gap-2 px-8 h-12 rounded-[18px] shadow-lg shadow-emerald-500/10 text-[10px]">
-                            <Download className="w-4 h-4" /> EXPORTER ({selectedGammes.length})
-                          </button>
-                        </>
-                      )}
-                      <button onClick={refresh} className="w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center hover:bg-white transition-all shadow-sm">
-                        <Database className="w-5 h-5 opacity-40" />
-                      </button>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-3">
+                         <button 
+                           onClick={handleDeleteGammes} 
+                           disabled={selectedGammes.length === 0}
+                           title={selectedGammes.length > 0 ? `Supprimer ${selectedGammes.length} gamme(s)` : "Supprimer"} 
+                           className={`w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center transition-all shadow-sm group ${selectedGammes.length === 0 ? 'bg-white/40 border-white/60 text-slate-400 cursor-not-allowed' : 'hover:bg-red-50 hover:text-red-500 cursor-pointer'}`}
+                         >
+                           <Trash className={`w-5 h-5 ${selectedGammes.length === 0 ? 'opacity-50' : 'opacity-40 group-hover:opacity-100'}`} />
+                         </button>
+                         <button 
+                           onClick={exportCSV} 
+                           disabled={selectedGammes.length === 0}
+                           className={`flex items-center justify-center gap-2 px-8 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
+                         >
+                           <Download className="w-4 h-4" /> EXPORTER {selectedGammes.length > 0 ? `(${selectedGammes.length})` : ''}
+                         </button>
+                      </div>
                    </div>
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  {gammes.map(g => {
+                  {filteredGammes.length === 0 && (
+                    <div className="glass-card p-12 text-center rounded-[28px] border-2 border-dashed border-white/40">
+                      <Wrench className="w-12 h-12 text-slate-400 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-bold text-slate-700">Aucune gamme trouvée</h3>
+                      <p className="text-xs text-slate-500 mt-1">Aucune gamme ne correspond à votre recherche "{gammeSearch}".</p>
+                    </div>
+                  )}
+                  {filteredGammes.map(g => {
                     const isSelected = selectedGammes.includes(g._id!);
                     const isExpanded = expandedGammes.includes(g._id!);
+                    const isNewlyGenerated = g.json_data.generated_at === newlyGeneratedTime;
                     return (
                       <div key={g._id} 
-                        className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' : 'border-white/80'}`}
+                        className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${
+                          isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' : 
+                          isNewlyGenerated ? 'border-purple-400 ring-2 ring-purple-400/50 shadow-[0_0_30px_rgba(147,51,234,0.4),0_0_30px_rgba(59,130,246,0.4)] bg-gradient-to-r from-blue-50/50 to-purple-50/50' : 
+                          'border-white/80'
+                        }`}
                       >
                         <div className="flex items-center gap-8 cursor-pointer group" onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}>
                            <div className="w-12 h-12 bg-slate-900 rounded-[18px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10 shrink-0">
@@ -643,30 +893,81 @@ export default function App() {
                               exit={{ height: 0, opacity: 0 }}
                               className="overflow-hidden"
                             >
-                              <div className="pt-6 mt-6 border-t border-slate-100 space-y-2">
-                                {g.json_data.steps.map((s, i) => (
-                                  <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all">
-                                     <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0">{s.op}</span>
-                                     <textarea 
-                                       rows={1}
-                                       value={s.description} 
-                                       onChange={(e) => handleUpdateStep(g._id!, i, e.target.value)} 
-                                       onKeyDown={async (e) => {
-                                         if (e.key === 'Enter' && !e.shiftKey) {
-                                           e.preventDefault();
-                                           try {
-                                             await api.updateGamme(g._id!, g);
-                                           } catch (err) {
-                                             console.error("Failed to save gamme", err);
-                                           }
-                                         }
-                                       }}
-                                       title="Appuyez sur Entrée pour sauvegarder"
-                                       className="flex-1 bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight" 
-                                     />
+                                <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
+                                  {g.json_data.metadata && g.json_data.metadata.length > 0 && (
+                                    <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
+                                      {g.json_data.metadata.map((meta, mIdx) => (
+                                        <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
+                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
+                                          <input
+                                            type="text"
+                                            value={meta.value}
+                                            onChange={(e) => handleUpdateMetadata(g._id!, mIdx, e.target.value)}
+                                            onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                            className="bg-transparent text-xs font-bold text-slate-700 outline-none focus:text-blue-600 border-b border-transparent focus:border-blue-200"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  <div className="space-y-2">
+                                    {g.json_data.steps.map((s, i) => (
+                                      <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
+                                        <div className="flex gap-3 items-start w-full">
+                                          <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
+                                          
+                                          <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                             <textarea 
+                                               rows={1}
+                                               ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                               value={s.description} 
+                                               onChange={(e) => {
+                                                 e.target.style.height = 'auto';
+                                                 e.target.style.height = e.target.scrollHeight + 'px';
+                                                 handleUpdateStep(g._id!, i, 'description', e.target.value);
+                                               }} 
+                                               onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                               onKeyDown={async (e) => {
+                                                 if (e.key === 'Enter' && !e.shiftKey) {
+                                                   e.preventDefault();
+                                                   try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                 }
+                                               }}
+                                               title="Appuyez sur Entrée pour sauvegarder"
+                                               className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden" 
+                                             />
+                                             
+                                             {s.custom_fields && s.custom_fields.length > 0 && (
+                                               <div className="flex flex-col gap-1.5 mt-1">
+                                                 {s.custom_fields.map((field, fIdx) => (
+                                                   <div key={fIdx} className="flex items-center gap-2">
+                                                     <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wider shrink-0 min-w-[60px]">
+                                                       {field.key}:
+                                                     </span>
+                                                     <input
+                                                        type="text"
+                                                        value={field.value}
+                                                        onChange={(e) => handleUpdateCustomField(g._id!, i, fIdx, e.target.value)}
+                                                        onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                        onKeyDown={async (e) => {
+                                                          if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                          }
+                                                        }}
+                                                        className="w-full bg-transparent text-[10px] text-slate-600 font-medium outline-none focus:text-blue-800 transition-colors"
+                                                     />
+                                                   </div>
+                                                 ))}
+                                               </div>
+                                             )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
+                                </div>
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -705,25 +1006,44 @@ export default function App() {
                             </option>
                           ))}
                         </select>
-                        <button onClick={handleCreatePrompt} className="w-8 h-8 bg-blue-600 text-white rounded-[12px] flex items-center justify-center hover:bg-blue-700 transition-colors shadow-md">
+                        <button onClick={handleCreatePrompt} className="w-8 h-8 bg-blue-600 text-white rounded-[12px] flex items-center justify-center hover:bg-blue-700 transition-colors shadow-md" title="Créer une nouvelle version">
                           <Plus className="w-4 h-4" />
                         </button>
-                        {currentPrompt?._id && (
-                          <button onClick={() => handleDeletePrompt(currentPrompt._id!)} className="w-8 h-8 bg-red-50 text-red-600 rounded-[12px] flex items-center justify-center hover:bg-red-100 transition-colors shadow-sm ml-1">
-                            <Trash className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button onClick={() => {
+                          if (currentPrompt?._id) {
+                            handleDeletePrompt(currentPrompt._id);
+                          } else {
+                            const active = prompts.find(p => p.json_data.is_active) || prompts[0];
+                            if (active) setCurrentPrompt(active);
+                          }
+                        }} className="w-8 h-8 bg-red-50 text-red-600 rounded-[12px] flex items-center justify-center hover:bg-red-100 transition-colors shadow-sm ml-1" title={currentPrompt?._id ? "Supprimer la version" : "Annuler la création"}>
+                          <Trash className="w-4 h-4" />
+                        </button>
                       </div>
                    </div>
                    
-                   <div className="mb-6">
+                   <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-200 focus-within:border-blue-500 transition-colors pb-2">
                       <input 
                         type="text" 
                         value={currentPrompt?.description || ''} 
                         onChange={(e) => setCurrentPrompt(p => p ? { ...p, description: e.target.value } : null)}
-                        className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none border-b-2 border-slate-200 focus:border-blue-500 transition-colors pb-2 text-slate-800 placeholder-slate-300"
+                        className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none text-slate-800 placeholder-slate-300"
                         placeholder="Nom de la version..."
                       />
+                      {currentPrompt?.json_data.is_active ? (
+                        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-full border border-emerald-200 shadow-sm shrink-0">
+                           <div className="relative">
+                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                             <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-30" />
+                           </div>
+                           <span className="text-[11px] font-black uppercase tracking-widest">Version Active</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 bg-slate-100 text-slate-500 px-4 py-2 rounded-full border border-slate-200 shrink-0">
+                           <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                           <span className="text-[11px] font-black uppercase tracking-widest">Inactive</span>
+                        </div>
+                      )}
                    </div>
 
                    <div className="relative">
@@ -733,8 +1053,9 @@ export default function App() {
                       <div className="absolute top-6 right-6 px-3 py-1 bg-slate-900/5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 pointer-events-none">Expert Markdown Engine</div>
                    </div>
 
-                   <button onClick={async () => handleSavePrompt(true)} className="btn-primary w-full mt-8 h-16 rounded-[24px] flex items-center justify-center gap-4 text-sm">
-                     <Save className="w-7 h-7" /> SAUVEGARDER ET ACTIVER
+                   <button onClick={async () => handleSavePrompt(true)} className={`btn-primary w-full mt-8 h-16 rounded-[24px] flex items-center justify-center gap-4 text-sm ${currentPrompt?.json_data.is_active ? 'bg-emerald-600 shadow-emerald-500/10' : ''}`}>
+                     <Save className="w-7 h-7" /> 
+                     {currentPrompt?.json_data.is_active ? 'METTRE À JOUR LA VERSION ACTIVE' : 'SAUVEGARDER ET ACTIVER'}
                    </button>
                 </div>
               </div>
@@ -744,15 +1065,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <footer className="fixed bottom-8 right-10 z-50">
-        <div className="glass-card pl-3 pr-6 py-2.5 rounded-full flex items-center gap-4 shadow-xl border-white shadow-blue-500/5">
-          <div className="relative">
-             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-             <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-30" />
-          </div>
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500/60">Gams Engine v2.0 <span className="mx-2 text-slate-300">|</span> <span className="text-emerald-600">Encrypted Gateway Active</span></span>
-        </div>
-      </footer>
+
 
       {/* Fullscreen Image Modal */}
       <AnimatePresence>

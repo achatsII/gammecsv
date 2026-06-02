@@ -139,6 +139,16 @@ export const api = {
     return res.json();
   },
 
+  async updatePrompt(id: string, prompt: SystemPrompt): Promise<any> {
+    const { _id, ...payload } = prompt;
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/prompts/one/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("updatePrompt failed with status:", res.status);
+    return res.json();
+  },
+
   async deletePrompt(id: string): Promise<any> {
     const res = await authenticatedFetch(`${BASE_URL}/v1/data/prompts/${id}`, {
       method: 'DELETE',
@@ -159,13 +169,37 @@ export const api = {
           type: "object",
           properties: {
             machine_number: { type: "string" },
+            metadata: {
+              type: "array",
+              description: "Top-level custom fields requested by the system instruction (e.g. supervisor, building).",
+              items: {
+                type: "object",
+                properties: {
+                  key: { type: "string", description: "The exact name of the custom field." },
+                  value: { type: "string", description: "The value of the custom field." }
+                },
+                required: ["key", "value"]
+              }
+            },
             steps: {
               type: "array",
               items: {
                 type: "object",
                 properties: {
                   op: { type: "number" },
-                  description: { type: "string" }
+                  description: { type: "string" },
+                  custom_fields: {
+                    type: "array",
+                    description: "Step-specific custom fields requested by the system instruction (e.g. duration, detail, tools).",
+                    items: {
+                      type: "object",
+                      properties: {
+                        key: { type: "string", description: "The exact name of the custom field." },
+                        value: { type: "string", description: "The value of the custom field." }
+                      },
+                      required: ["key", "value"]
+                    }
+                  }
                 },
                 required: ["op", "description"]
               }

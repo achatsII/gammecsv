@@ -27,9 +27,15 @@ export interface Fiche {
   };
 }
 
+export interface CustomField {
+  key: string;
+  value: string;
+}
+
 export interface OperationStep {
   op: number;
   description: string;
+  custom_fields?: CustomField[];
 }
 
 export interface Gamme {
@@ -39,6 +45,7 @@ export interface Gamme {
   json_data: {
     fiche_id: string;
     machine_number: string;
+    metadata?: CustomField[];
     steps: OperationStep[];
     app_identifier: string;
     generated_at: string;
