@@ -216,7 +216,9 @@ export default function App() {
     const maximo = f.json_data?.formData?.numero_maximo || '';
     const desc = f.description || '';
     const author = f.json_data?.author?.fullname || '';
+    const name = f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || '';
     
+    if (name.toLowerCase().includes(searchLower)) return true;
     if (maximo.toLowerCase().includes(searchLower)) return true;
     if (desc.toLowerCase().includes(searchLower)) return true;
     if (author.toLowerCase().includes(searchLower)) return true;
@@ -238,6 +240,10 @@ export default function App() {
     const machine = g.json_data.machine_number || '';
     const desc = g.description || '';
     
+    const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
+    const ficheName = sourceFiche ? (sourceFiche.json_data?.name || sourceFiche.json_data?.formData?.nomFiche || sourceFiche.app_identifier || '') : '';
+    
+    if (ficheName.toLowerCase().includes(searchLower)) return true;
     if (machine.toLowerCase().includes(searchLower)) return true;
     if (desc.toLowerCase().includes(searchLower)) return true;
     
@@ -620,7 +626,7 @@ export default function App() {
               <div className="space-y-12">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                   <div className="flex flex-col gap-3">
-                     <h2 className="text-7xl font-black tracking-tighter uppercase leading-none flex items-center gap-6"><span>Flux de Terrain</span> <span className="text-3xl text-blue-500 bg-blue-500/10 px-5 py-2 rounded-[20px] translate-y-2">{fiches.length}</span></h2>
+                     <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase leading-none flex items-center gap-5"><span className="whitespace-nowrap">Fiches MultiModal</span> <span className="text-2xl md:text-3xl text-blue-500 bg-blue-500/10 px-4 py-1.5 md:px-5 md:py-2 rounded-[20px] translate-y-1">{fiches.length}</span></h2>
                      <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
                   </div>
                   
@@ -789,7 +795,7 @@ export default function App() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/30">
                    <div className="flex items-center gap-4 text-slate-400">
                       <Archive className="w-8 h-8" />
-                      <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Registre Industriel <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
+                      <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Gamme Générée <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
                    </div>
                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
                       {/* Search Bar for Gammes */}
