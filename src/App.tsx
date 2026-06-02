@@ -178,9 +178,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'fiches' | 'gammes' | 'settings'>('fiches');
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [gammes, setGammes] = useState<Gamme[]>([]);
+  const [expandedFiches, setExpandedFiches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const [selectedGammes, setSelectedGammes] = useState<string[]>([]);
+  const [expandedGammes, setExpandedGammes] = useState<string[]>([]);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<SystemPrompt | null>(null);
 
@@ -291,6 +294,28 @@ export default function App() {
       }
       return g;
     }));
+  };
+
+  const handleUpdateFicheTranscription = (ficheId: string, srcIndex: number, newTranscription: string) => {
+    setFiches(prev => prev.map(f => {
+      if (f._id === ficheId && f.json_data?.json_source) {
+        const newSource = [...f.json_data.json_source];
+        newSource[srcIndex] = { ...newSource[srcIndex], transcription: newTranscription };
+        return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+      }
+      return f;
+    }));
+  };
+
+  const handleDeleteGammes = async () => {
+    if (!confirm(`Voulez-vous vraiment supprimer ${selectedGammes.length} gamme(s) ?`)) return;
+    setLoading(true);
+    try {
+      await Promise.all(selectedGammes.map(id => api.deleteGamme(id)));
+      setSelectedGammes([]);
+      await refresh();
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
   const exportCSV = () => {
@@ -413,43 +438,133 @@ export default function App() {
                 </div>
                 
                 <div className="flex flex-col gap-4">
-                  {fiches.map(f => (
-                    <motion.div key={f._id} 
-                      className="glass-card p-6 rounded-[28px] flex items-center gap-8 group hover:shadow-xl transition-all border-2 border-white/80 hover:border-blue-200"
-                    >
-                      <div className="w-12 h-12 bg-blue-500/10 rounded-[18px] flex items-center justify-center text-blue-600 shrink-0">
-                        <FileText className="w-6 h-6" />
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{f.json_data?.formData?.numero_maximo || f.app_identifier || 'ID INCONNU'}</h3>
-                          <Badge variant={f._id.startsWith('fiche-demo') ? 'slate' : 'blue'}>{f._id.startsWith('fiche-demo') ? 'DÉMO' : 'LIVE'}</Badge>
-                        </div>
-                        <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description || 'Sans description'}"</p>
-                      </div>
-
-                      <div className="flex items-center gap-8 px-8 border-x border-slate-100/50">
-                        <div className="flex flex-col items-center">
-                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{f.json_data?.json_source?.filter(s => s.transcription)?.length || 0}</span>
-                          <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">SEGMENTS</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{f.json_data?.author?.fullname?.split(' ')[0] || 'Inconnu'}</span>
-                          <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">AUTEUR</span>
-                        </div>
-                      </div>
-
-                      <button 
-                        disabled={!!generating} 
-                        onClick={() => handleGenerate(f)} 
-                        className="btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shadow-lg shadow-blue-500/5"
+                  {fiches.map(f => {
+                    const isExpanded = expandedFiches.includes(f._id);
+                    return (
+                      <div key={f._id} 
+                        className="glass-card p-6 rounded-[28px] group transition-all border-2 border-white/80 hover:border-blue-200"
                       >
-                        {generating === f._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
-                        {generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}
-                      </button>
-                    </motion.div>
-                  ))}
+                        <div className="flex items-center gap-8 cursor-pointer" onClick={() => setExpandedFiches(prev => prev.includes(f._id) ? prev.filter(x => x !== f._id) : [...prev, f._id])}>
+                          <div className="w-12 h-12 bg-blue-500/10 rounded-[18px] flex items-center justify-center text-blue-600 shrink-0">
+                            <FileText className="w-6 h-6" />
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-1">
+                              <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{f.json_data?.formData?.numero_maximo || f.app_identifier || 'ID INCONNU'}</h3>
+                              <Badge variant={f._id.startsWith('fiche-demo') ? 'slate' : 'blue'}>{f._id.startsWith('fiche-demo') ? 'DÉMO' : 'LIVE'}</Badge>
+                            </div>
+                            <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description || 'Sans description'}"</p>
+                            {f._id && <span className="text-[8px] font-mono text-slate-400 mt-1 block">ID: {f._id}</span>}
+                          </div>
+
+                          <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{f.json_data?.json_source?.filter(s => s.transcription)?.length || 0}</span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">SEGMENTS</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{f.json_data?.author?.fullname?.split(' ')[0] || 'Inconnu'}</span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">AUTEUR</span>
+                            </div>
+                          </div>
+
+                          <button 
+                            disabled={!!generating} 
+                            onClick={(e) => { e.stopPropagation(); handleGenerate(f); }} 
+                            className="btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shadow-lg shadow-blue-500/5 shrink-0"
+                          >
+                            {generating === f._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
+                            {generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}
+                          </button>
+                          
+                          <button 
+                             className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ml-2 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
+                           >
+                             <ChevronRight className="w-5 h-5" />
+                           </button>
+                        </div>
+
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div 
+                              initial={{ height: 0, opacity: 0 }} 
+                              animate={{ height: 'auto', opacity: 1 }} 
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
+                                {f.json_data?.json_source?.map((src, i) => {
+                                  const showDescription = src.description && 
+                                                          src.description.toLowerCase() !== 'transcribed' && 
+                                                          src.description.trim() !== (src.transcription || '').trim();
+                                  const isImage = ['photo', 'image'].includes(src.type.toLowerCase());
+                                  const isAudio = src.type.toLowerCase() === 'audio';
+
+                                  return (
+                                  <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="slate">{src.type}</Badge>
+                                      <h4 className="text-xs font-black uppercase text-slate-800 truncate">{src.title}</h4>
+                                      <span className="text-[9px] font-bold text-slate-400 ml-auto shrink-0">{new Date(src.created_at).toLocaleString('fr-CA')}</span>
+                                    </div>
+                                    
+                                    <div className="flex flex-col md:flex-row gap-4 items-start">
+                                      {/* Media Column (Only for images) */}
+                                      {isImage && src.media_url && (
+                                        <button onClick={(e) => { e.stopPropagation(); setFullscreenImage(src.media_url!); }} title="Voir l'image en plein écran" className="w-full md:w-32 shrink-0 outline-none text-left">
+                                          <img src={src.media_url} alt={src.title} className="w-full h-24 object-cover rounded-[12px] border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in" />
+                                        </button>
+                                      )}
+
+                                      {/* Content Column */}
+                                      <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
+                                        {/* Audio Player */}
+                                        {isAudio && src.media_url && (
+                                          <audio controls src={src.media_url} className="w-full h-10 outline-none" />
+                                        )}
+
+                                        {src.transcription !== undefined && (
+                                          <textarea 
+                                            value={src.transcription}
+                                            onChange={(e) => handleUpdateFicheTranscription(f._id!, i, e.target.value)}
+                                            onKeyDown={async (e) => {
+                                              if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                try {
+                                                  await api.updateFiche(f._id!, f);
+                                                } catch (err) {
+                                                  console.error("Failed to save fiche", err);
+                                                }
+                                              }
+                                            }}
+                                            title="Appuyez sur Entrée pour sauvegarder"
+                                            className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
+                                            rows={Math.max(1, (src.transcription || '').split('\n').length)}
+                                          />
+                                        )}
+                                        
+                                        {showDescription && (
+                                          <div className="text-[10px] text-slate-500 bg-white/80 p-3 rounded-[10px] border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar">
+                                            <strong className="block text-[8px] uppercase tracking-widest mb-1.5 text-slate-400">ANALYSE</strong>
+                                            <span className="whitespace-pre-wrap">{src.description}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )})}
+                                {(!f.json_data?.json_source || f.json_data.json_source.length === 0) && (
+                                  <p className="text-xs text-slate-400 italic text-center py-4">Aucune donnée multimédia disponible.</p>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -463,9 +578,14 @@ export default function App() {
                    </div>
                    <div className="flex gap-3">
                       {selectedGammes.length > 0 && (
-                        <button onClick={exportCSV} className="btn-primary bg-emerald-600 flex items-center gap-2 px-8 h-12 rounded-[18px] shadow-lg shadow-emerald-500/10 text-[10px]">
-                          <Download className="w-4 h-4" /> EXPORTER ({selectedGammes.length})
-                        </button>
+                        <>
+                          <button onClick={handleDeleteGammes} title={`Supprimer ${selectedGammes.length} gamme(s)`} className="w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all shadow-sm group">
+                            <Trash className="w-5 h-5 opacity-40 group-hover:opacity-100" />
+                          </button>
+                          <button onClick={exportCSV} className="btn-primary bg-emerald-600 flex items-center gap-2 px-8 h-12 rounded-[18px] shadow-lg shadow-emerald-500/10 text-[10px]">
+                            <Download className="w-4 h-4" /> EXPORTER ({selectedGammes.length})
+                          </button>
+                        </>
                       )}
                       <button onClick={refresh} className="w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center hover:bg-white transition-all shadow-sm">
                         <Database className="w-5 h-5 opacity-40" />
@@ -473,42 +593,86 @@ export default function App() {
                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {gammes.map(g => (
-                    <div key={g._id} onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}
-                      className={`glass-card p-5 cursor-pointer border-2 transition-all hover:shadow-[0_15px_30px_-5px_rgba(0,0,0,0.05)] rounded-[28px] ${selectedGammes.includes(g._id!) ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' : 'border-white/80'}`}
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-slate-900 rounded-[14px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10"><Wrench className="w-5 h-5" /></div>
-                            <div>
-                               <span className="text-[8px] font-black text-blue-600 block leading-none mb-0.5">MACHINE</span>
-                               <h4 className="text-lg font-black leading-none uppercase tracking-tight">{g.json_data.machine_number}</h4>
-                            </div>
-                         </div>
-                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${selectedGammes.includes(g._id!) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 shadow-inner'}`}>{selectedGammes.includes(g._id!) && <Check className="w-3 h-3" />}</div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                         {g.json_data.steps.map((s, i) => (
-                           <div key={i} onClick={(e) => e.stopPropagation()} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all">
-                              <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0">{s.op}</span>
-                              <textarea 
-                                rows={1}
-                                value={s.description} 
-                                onChange={(e) => handleUpdateStep(g._id!, i, e.target.value)} 
-                                className="flex-1 bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight" 
-                              />
+                <div className="flex flex-col gap-4">
+                  {gammes.map(g => {
+                    const isSelected = selectedGammes.includes(g._id!);
+                    const isExpanded = expandedGammes.includes(g._id!);
+                    return (
+                      <div key={g._id} 
+                        className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' : 'border-white/80'}`}
+                      >
+                        <div className="flex items-center gap-8 cursor-pointer group" onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}>
+                           <div className="w-12 h-12 bg-slate-900 rounded-[18px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10 shrink-0">
+                             <Wrench className="w-6 h-6" />
                            </div>
-                         ))}
+                           
+                           <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-3 mb-1">
+                                 <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
+                                 <Badge variant="blue">{g.json_data.steps.length} OP</Badge>
+                              </div>
+                              {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
+                           </div>
+
+                           <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
+                             <div className="flex flex-col items-center">
+                               <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{new Date(g.json_data.generated_at).toLocaleDateString('fr-CA')}</span>
+                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">GÉNÉRÉE LE</span>
+                             </div>
+                           </div>
+
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); setExpandedGammes(prev => prev.includes(g._id!) ? prev.filter(x => x !== g._id!) : [...prev, g._id!]); }}
+                             className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
+                           >
+                             <ChevronRight className="w-5 h-5" />
+                           </button>
+
+                           <div className="w-12 h-12 shrink-0 flex items-center justify-center">
+                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 shadow-inner'}`}>
+                               {isSelected && <Check className="w-3 h-3" />}
+                             </div>
+                           </div>
+                        </div>
+
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div 
+                              initial={{ height: 0, opacity: 0 }} 
+                              animate={{ height: 'auto', opacity: 1 }} 
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pt-6 mt-6 border-t border-slate-100 space-y-2">
+                                {g.json_data.steps.map((s, i) => (
+                                  <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all">
+                                     <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0">{s.op}</span>
+                                     <textarea 
+                                       rows={1}
+                                       value={s.description} 
+                                       onChange={(e) => handleUpdateStep(g._id!, i, e.target.value)} 
+                                       onKeyDown={async (e) => {
+                                         if (e.key === 'Enter' && !e.shiftKey) {
+                                           e.preventDefault();
+                                           try {
+                                             await api.updateGamme(g._id!, g);
+                                           } catch (err) {
+                                             console.error("Failed to save gamme", err);
+                                           }
+                                         }
+                                       }}
+                                       title="Appuyez sur Entrée pour sauvegarder"
+                                       className="flex-1 bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight" 
+                                     />
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
- 
-                      <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                         <Badge variant="blue">{g.json_data.steps.length} OP</Badge>
-                         <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{new Date(g.json_data.generated_at).toLocaleDateString('fr-CA')}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -589,6 +753,29 @@ export default function App() {
           <span className="text-[10px] font-black uppercase tracking-widest text-slate-500/60">Gams Engine v2.0 <span className="mx-2 text-slate-300">|</span> <span className="text-emerald-600">Encrypted Gateway Active</span></span>
         </div>
       </footer>
+
+      {/* Fullscreen Image Modal */}
+      <AnimatePresence>
+        {fullscreenImage && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            onClick={() => setFullscreenImage(null)}
+            className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-8 cursor-zoom-out"
+          >
+            <motion.img 
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              src={fullscreenImage} 
+              alt="Plein écran" 
+              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+

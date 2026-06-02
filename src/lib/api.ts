@@ -32,7 +32,8 @@ const authenticatedFetch = async (url: string, options: RequestInit = {}, retryC
         }
     }
 
-    const response = await fetch(url, { ...options, headers });
+    // cache: 'no-store' forces the browser to always fetch fresh data from the server
+    const response = await fetch(url, { cache: 'no-store', ...options, headers });
 
     if (response.status === 401 && retryCount === 0) {
         try {
@@ -78,12 +79,38 @@ export const api = {
     return data.results || [];
   },
 
-  // Gammes
   async saveGamme(gamme: Omit<Gamme, '_id'>): Promise<any> {
     const res = await authenticatedFetch(`${BASE_URL}/v1/data/gammes`, {
       method: 'POST',
       body: JSON.stringify(gamme),
     });
+    return res.json();
+  },
+
+  async updateGamme(id: string, gamme: Gamme): Promise<any> {
+    const { _id, ...payload } = gamme;
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/gammes/one/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("updateGamme failed with status:", res.status);
+    return res.json();
+  },
+
+  async deleteGamme(id: string): Promise<any> {
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/gammes/${id}`, {
+      method: 'DELETE',
+    });
+    return res.json();
+  },
+
+  async updateFiche(id: string, fiche: Fiche): Promise<any> {
+    const { _id, ...payload } = fiche;
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/fiches/one/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("updateFiche failed with status:", res.status);
     return res.json();
   },
 
