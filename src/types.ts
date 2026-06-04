@@ -44,9 +44,11 @@ export interface Gamme {
   description: string;
   json_data: {
     fiche_id: string;
+    prompt_id?: string;
     machine_number: string;
     metadata?: CustomField[];
     steps: OperationStep[];
+    raw_html?: string;
     app_identifier: string;
     generated_at: string;
   };
@@ -57,10 +59,12 @@ export interface SystemPrompt {
   data_type: 'prompts';
   description: string;
   json_data: {
+    name?: string;
     content: string;
     version: number;
     app_identifier: string;
     is_active: boolean;
+    export_format?: 'csv' | 'html';
   };
 }
 
