@@ -732,7 +732,7 @@ export default function App() {
                           <button 
                             disabled={!!generating} 
                             onClick={(e) => { e.stopPropagation(); handleGenerate(f); }} 
-                            className="btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shadow-lg shadow-blue-500/5 shrink-0"
+                            className={`btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shrink-0 transition-all duration-500 ${generating === f._id ? 'animate-pulse shadow-lg shadow-blue-500/20 scale-[0.98]' : 'shadow-lg shadow-blue-500/5'}`}
                           >
                             {generating === f._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
                             {generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}
@@ -931,16 +931,20 @@ export default function App() {
                     const isNewlyGenerated = g.json_data.generated_at === newlyGeneratedTime;
                     const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
                     let ficheName = 'INCONNU';
-                    let authorName = '';
+                    const gAny = g as any;
+                    let authorName = gAny['user-email'] || gAny.user_email || g.json_data?.['user-email'] || (g.json_data as any)?.user_email || '';
                     if (sourceFiche) {
                       ficheName = sourceFiche.json_data?.name || sourceFiche.json_data?.formData?.nomFiche || sourceFiche.app_identifier || 'INCONNU';
                       if (ficheName.startsWith('Fiche pour session')) {
                         ficheName = sourceFiche.json_data?.formData?.numero_maximo ? `Fiche ${sourceFiche.json_data.formData.numero_maximo}` : 'Fiche Sans Nom';
                       }
-                      authorName = sourceFiche.json_data?.author?.fullname || '';
-                      if (authorName.includes('@')) {
-                        authorName = authorName.split('@')[0];
+                      if (!authorName) {
+                        const sfAny = sourceFiche as any;
+                        authorName = sourceFiche.json_data?.auteur?.nom || sfAny['user-email'] || sfAny.user_email || '';
                       }
+                    }
+                    if (authorName.includes('@')) {
+                      authorName = authorName.split('@')[0].toUpperCase();
                     }
                     if (ficheName.length > 25) ficheName = ficheName.substring(0, 25) + '...';
 
@@ -964,7 +968,6 @@ export default function App() {
                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
                                  <h3 className="text-lg font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
-                                 {!isHtmlGamme && <Badge variant="blue">{g.json_data.steps.length} OP</Badge>}
                                  <Badge variant="indigo"><span className="flex items-center gap-1"><FileText className="w-3 h-3 opacity-80" /> {ficheName}</span></Badge>
                                  <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
                                  {authorName && <Badge variant="slate"><span className="flex items-center gap-1"><User className="w-3 h-3 opacity-80" /> {authorName}</span></Badge>}

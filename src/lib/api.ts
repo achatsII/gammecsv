@@ -219,7 +219,7 @@ export const api = {
     console.log("AskAI raw response:", data);
     
     if (format === 'html') {
-      const htmlText = data.results?.assistant_response
+      let htmlText = data.results?.assistant_response
         || data.assistant_response
         || data.results?.answer 
         || data.results?.text 
@@ -233,6 +233,59 @@ export const api = {
         || (Array.isArray(data) && data[0]?.output)
         || (Array.isArray(data) && data[0]?.text)
         || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+      
+      if (typeof htmlText === 'string') {
+        htmlText = htmlText.trim();
+        // Strip markdown backticks
+        if (htmlText.startsWith('```')) {
+          const lines = htmlText.split('\n');
+          if (lines[0].startsWith('```')) lines.shift();
+          if (lines[lines.length - 1].startsWith('```')) lines.pop();
+          htmlText = lines.join('\n').trim();
+        }
+
+        // Try parsing JSON for slide format
+        try {
+          const parsed = JSON.parse(htmlText);
+          if (parsed && parsed.html && typeof parsed.html === 'string') {
+            htmlText = parsed.html;
+          } else if (parsed && parsed.en && typeof parsed.en === 'string') {
+            htmlText = parsed.en;
+          } else if (parsed && Array.isArray(parsed.slides)) {
+            const slides = parsed.slides.map((s: any) => s.html || s.en || s.fr || Object.values(s).find(v => typeof v === 'string')).filter(Boolean);
+            if (slides.length === 1) {
+              htmlText = slides[0];
+            } else if (slides.length > 1) {
+              // Merge multiple slides into one document
+              const headMatch = slides[0].match(/<head>([\s\S]*?)<\/head>/i);
+              const headContent = headMatch ? headMatch[1] : '';
+              
+              const bodies = slides.map((html: string) => {
+                const match = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                return match ? match[1] : html;
+              });
+              
+              // We stack them vertically with a gap and page-break for printing
+              htmlText = `<!DOCTYPE html><html lang="fr">
+<head>
+  ${headContent}
+  <style>
+    @media print {
+      .slide-container { page-break-after: always; break-after: page; }
+      body { background-color: white !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 flex flex-col gap-8 items-center p-4">
+  ${bodies.map((body: string) => `<div class="slide-container w-full flex justify-center">${body}</div>`).join('\n')}
+</body>
+</html>`;
+            }
+          }
+        } catch (e) {
+          // If it fails to parse as JSON, it's probably raw HTML already. Leave it as is.
+        }
+      }
       return htmlText;
     }
     return data.results?.parsed_json;

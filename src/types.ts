@@ -42,6 +42,7 @@ export interface Gamme {
   _id?: string;
   data_type: 'gammes';
   description: string;
+  'user-email'?: string;
   json_data: {
     fiche_id: string;
     prompt_id?: string;
