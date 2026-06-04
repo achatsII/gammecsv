@@ -285,7 +285,7 @@ export default function App() {
       if (!currentPrompt || !currentPrompt._id) {
         let match = null;
         if (currentPrompt) {
-          match = promptData.find(p => p.description === currentPrompt.description && p.json_data.content === currentPrompt.json_data.content);
+          match = promptData.find(p => (p.json_data.name || p.description) === (currentPrompt.json_data.name || currentPrompt.description) && p.json_data.content === currentPrompt.json_data.content);
         }
         
         if (match) {
@@ -376,16 +376,19 @@ export default function App() {
     const prompt = JSON.stringify(fiche, null, 2);
 
     try {
-      const gams = await api.askAI(prompt, promptToUse.json_data.content);
+      const isHtml = promptToUse.json_data.export_format === 'html';
+      const gams = await api.askAI(prompt, promptToUse.json_data.content, isHtml ? 'html' : 'csv');
       if (gams) {
         const genTime = new Date().toISOString();
         const payload: Omit<Gamme, '_id'> = {
           data_type: 'gammes',
-          description: `Gamme générée - ${gams.machine_number}`,
+          description: `Gamme générée - ${isHtml ? 'HTML Doc' : gams.machine_number}`,
           json_data: {
-            fiche_id: fiche._id,
-            machine_number: gams.machine_number,
-            steps: gams.steps,
+            fiche_id: fiche._id!,
+            prompt_id: promptToUse._id,
+            machine_number: isHtml ? 'DOCUMENT HTML' : gams.machine_number,
+            steps: isHtml ? [] : gams.steps,
+            raw_html: isHtml ? (typeof gams === 'string' ? gams : JSON.stringify(gams)) : undefined,
             app_identifier: APP_ID,
             generated_at: genTime
           }
@@ -443,6 +446,17 @@ export default function App() {
       if (f._id === ficheId && f.json_data?.json_source) {
         const newSource = [...f.json_data.json_source];
         newSource[srcIndex] = { ...newSource[srcIndex], transcription: newTranscription };
+        return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+      }
+      return f;
+    }));
+  };
+
+  const handleUpdateFicheDescription = (ficheId: string, srcIndex: number, newDescription: string) => {
+    setFiches(prev => prev.map(f => {
+      if (f._id === ficheId && f.json_data?.json_source) {
+        const newSource = [...f.json_data.json_source];
+        newSource[srcIndex] = { ...newSource[srcIndex], description: newDescription };
         return { ...f, json_data: { ...f.json_data, json_source: newSource } };
       }
       return f;
@@ -517,11 +531,28 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const exportHTML = () => {
+    const targets = gammes.filter(g => selectedGammes.includes(g._id!) && g.json_data.raw_html);
+    targets.forEach((g, index) => {
+      setTimeout(() => {
+        const blob = new Blob([g.json_data.raw_html!], { type: 'text/html;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `gamme_${g.json_data.machine_number.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.html`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }, index * 200);
+    });
+  };
+
   const handleCreatePrompt = () => {
     const newVersion = {
       data_type: 'prompts' as const,
       description: `Version ${prompts.length + 1}`,
       json_data: {
+        name: `Version ${prompts.length + 1}`,
         content: 'INSERER NOUVELLE VERSION SYSTEME INSTRUCTION ICI',
         version: prompts.length + 1,
         app_identifier: APP_ID,
@@ -748,29 +779,60 @@ export default function App() {
                                           <audio controls src={src.media_url} className="w-full h-10 outline-none" />
                                         )}
 
-                                        {src.transcription !== undefined && (
-                                          <textarea 
-                                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                            value={src.transcription}
-                                            onChange={(e) => {
-                                              e.target.style.height = 'auto';
-                                              e.target.style.height = e.target.scrollHeight + 'px';
-                                              handleUpdateFicheTranscription(f._id!, i, e.target.value);
-                                            }}
-                                            onKeyDown={async (e) => {
-                                              if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                try {
-                                                  await api.updateFiche(f._id!, f);
-                                                } catch (err) {
-                                                  console.error("Failed to save fiche", err);
+                                        {showDescription && (
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
+                                            <textarea 
+                                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                              value={src.description}
+                                              onChange={(e) => {
+                                                e.target.style.height = 'auto';
+                                                e.target.style.height = e.target.scrollHeight + 'px';
+                                                handleUpdateFicheDescription(f._id!, i, e.target.value);
+                                              }}
+                                              onKeyDown={async (e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                  e.preventDefault();
+                                                  try {
+                                                    await api.updateFiche(f._id!, f);
+                                                  } catch (err) {
+                                                    console.error("Failed to save fiche", err);
+                                                  }
                                                 }
-                                              }
-                                            }}
-                                            title="Appuyez sur Entrée pour sauvegarder"
-                                            className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
-                                            rows={1}
-                                          />
+                                              }}
+                                              title="Appuyez sur Entrée pour sauvegarder"
+                                              className="text-[11px] text-slate-600 leading-relaxed font-medium w-full bg-slate-50/50 border border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-2 resize-none overflow-hidden transition-all outline-none"
+                                              rows={1}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {src.transcription !== undefined && (
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-[9px] font-black uppercase text-slate-400">Transcription</span>
+                                            <textarea 
+                                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                              value={src.transcription}
+                                              onChange={(e) => {
+                                                e.target.style.height = 'auto';
+                                                e.target.style.height = e.target.scrollHeight + 'px';
+                                                handleUpdateFicheTranscription(f._id!, i, e.target.value);
+                                              }}
+                                              onKeyDown={async (e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                  e.preventDefault();
+                                                  try {
+                                                    await api.updateFiche(f._id!, f);
+                                                  } catch (err) {
+                                                    console.error("Failed to save fiche", err);
+                                                  }
+                                                }
+                                              }}
+                                              title="Appuyez sur Entrée pour sauvegarder"
+                                              className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
+                                              rows={1}
+                                            />
+                                          </div>
                                         )}
                                       </div>
                                     </div>
@@ -831,10 +893,17 @@ export default function App() {
                          </button>
                          <button 
                            onClick={exportCSV} 
-                           disabled={selectedGammes.length === 0}
-                           className={`flex items-center justify-center gap-2 px-8 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
+                           disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html)}
+                           className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
                          >
-                           <Download className="w-4 h-4" /> EXPORTER {selectedGammes.length > 0 ? `(${selectedGammes.length})` : ''}
+                           <Download className="w-4 h-4" /> EXPORTER (CSV)
+                         </button>
+                         <button 
+                           onClick={exportHTML} 
+                           disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html)}
+                           className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
+                         >
+                           <Download className="w-4 h-4" /> EXPORTER (HTML)
                          </button>
                       </div>
                    </div>
@@ -859,6 +928,10 @@ export default function App() {
                     }
                     if (ficheName.length > 25) ficheName = ficheName.substring(0, 25) + '...';
 
+                    const sourcePrompt = prompts.find(p => p._id === g.json_data.prompt_id);
+                    const promptName = sourcePrompt ? (sourcePrompt.json_data.name || sourcePrompt.description) : 'CONFIG INCONNUE';
+                    const isHtmlGamme = !!g.json_data.raw_html;
+
                     return (
                       <div key={g._id} 
                         className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${
@@ -875,8 +948,9 @@ export default function App() {
                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-3 mb-1 flex-wrap">
                                  <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
-                                 <Badge variant="blue">{g.json_data.steps.length} OP</Badge>
+                                 {!isHtmlGamme && <Badge variant="blue">{g.json_data.steps.length} OP</Badge>}
                                  <Badge variant="indigo"><span className="flex items-center gap-1"><FileText className="w-3 h-3 opacity-80" /> {ficheName}</span></Badge>
+                                 <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
                               </div>
                               {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
                            </div>
@@ -911,79 +985,95 @@ export default function App() {
                               className="overflow-hidden"
                             >
                                 <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
-                                  {g.json_data.metadata && g.json_data.metadata.length > 0 && (
-                                    <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
-                                      {g.json_data.metadata.map((meta, mIdx) => (
-                                        <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
-                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
-                                          <input
-                                            type="text"
-                                            value={meta.value}
-                                            onChange={(e) => handleUpdateMetadata(g._id!, mIdx, e.target.value)}
-                                            onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                            className="bg-transparent text-xs font-bold text-slate-700 outline-none focus:text-blue-600 border-b border-transparent focus:border-blue-200"
-                                          />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  <div className="space-y-2">
-                                    {g.json_data.steps.map((s, i) => (
-                                      <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
-                                        <div className="flex gap-3 items-start w-full">
-                                          <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
-                                          
-                                          <div className="flex-1 flex flex-col gap-2 min-w-0">
-                                             <textarea 
-                                               rows={1}
-                                               ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                               value={s.description} 
-                                               onChange={(e) => {
-                                                 e.target.style.height = 'auto';
-                                                 e.target.style.height = e.target.scrollHeight + 'px';
-                                                 handleUpdateStep(g._id!, i, 'description', e.target.value);
-                                               }} 
-                                               onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                               onKeyDown={async (e) => {
-                                                 if (e.key === 'Enter' && !e.shiftKey) {
-                                                   e.preventDefault();
-                                                   try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
-                                                 }
-                                               }}
-                                               title="Appuyez sur Entrée pour sauvegarder"
-                                               className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden" 
-                                             />
-                                             
-                                             {s.custom_fields && s.custom_fields.length > 0 && (
-                                               <div className="flex flex-col gap-1.5 mt-1">
-                                                 {s.custom_fields.map((field, fIdx) => (
-                                                   <div key={fIdx} className="flex items-center gap-2">
-                                                     <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wider shrink-0 min-w-[60px]">
-                                                       {field.key}:
-                                                     </span>
-                                                     <input
-                                                        type="text"
-                                                        value={field.value}
-                                                        onChange={(e) => handleUpdateCustomField(g._id!, i, fIdx, e.target.value)}
-                                                        onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                                        onKeyDown={async (e) => {
-                                                          if (e.key === 'Enter') {
-                                                            e.preventDefault();
-                                                            try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
-                                                          }
-                                                        }}
-                                                        className="w-full bg-transparent text-[10px] text-slate-600 font-medium outline-none focus:text-blue-800 transition-colors"
-                                                     />
-                                                   </div>
-                                                 ))}
-                                               </div>
-                                             )}
-                                          </div>
-                                        </div>
+                                  {isHtmlGamme ? (
+                                    <div className="w-full bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner relative group/iframe">
+                                      <iframe 
+                                        srcDoc={g.json_data.raw_html} 
+                                        title="HTML Preview" 
+                                        className="w-full h-[600px] border-none"
+                                        sandbox="allow-same-origin allow-scripts"
+                                      />
+                                      <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase opacity-0 group-hover/iframe:opacity-100 transition-opacity pointer-events-none">
+                                        Prévisualisation HTML
                                       </div>
-                                    ))}
-                                  </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {g.json_data.metadata && g.json_data.metadata.length > 0 && (
+                                        <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
+                                          {g.json_data.metadata.map((meta, mIdx) => (
+                                            <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
+                                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
+                                              <input
+                                                type="text"
+                                                value={meta.value}
+                                                onChange={(e) => handleUpdateMetadata(g._id!, mIdx, e.target.value)}
+                                                onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                className="bg-transparent text-xs font-bold text-slate-700 outline-none focus:text-blue-600 border-b border-transparent focus:border-blue-200"
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <div className="space-y-2">
+                                        {g.json_data.steps.map((s, i) => (
+                                          <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
+                                            <div className="flex gap-3 items-start w-full">
+                                              <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
+                                              
+                                              <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                                <textarea 
+                                                  rows={1}
+                                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                  value={s.description} 
+                                                  onChange={(e) => {
+                                                    e.target.style.height = 'auto';
+                                                    e.target.style.height = e.target.scrollHeight + 'px';
+                                                    handleUpdateStep(g._id!, i, 'description', e.target.value);
+                                                  }} 
+                                                  onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                  onKeyDown={async (e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                      e.preventDefault();
+                                                      try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                    }
+                                                  }}
+                                                  title="Appuyez sur Entrée pour sauvegarder"
+                                                  className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden" 
+                                                />
+                                                
+                                                {s.custom_fields && s.custom_fields.length > 0 && (
+                                                  <div className="flex flex-col gap-1.5 mt-1">
+                                                    {s.custom_fields.map((field, fIdx) => (
+                                                      <div key={fIdx} className="flex items-center gap-2">
+                                                        <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wider shrink-0 min-w-[60px]">
+                                                          {field.key}:
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            value={field.value}
+                                                            onChange={(e) => handleUpdateCustomField(g._id!, i, fIdx, e.target.value)}
+                                                            onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                            onKeyDown={async (e) => {
+                                                              if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                              }
+                                                            }}
+                                                            className="w-full bg-transparent text-[10px] text-slate-600 font-medium outline-none focus:text-blue-800 transition-colors"
+                                                        />
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                             </motion.div>
                           )}
@@ -1011,15 +1101,15 @@ export default function App() {
                       <div className="flex items-center gap-2 bg-white/40 p-2 rounded-[20px]">
                         <select 
                           className="bg-transparent text-[11px] font-black uppercase tracking-widest text-slate-700 outline-none cursor-pointer pl-3 pr-2"
-                          value={currentPrompt?._id || currentPrompt?.description || ''}
+                          value={currentPrompt?._id || currentPrompt?.json_data.name || currentPrompt?.description || ''}
                           onChange={(e) => {
-                            const selected = prompts.find(p => (p._id || p.description) === e.target.value);
+                            const selected = prompts.find(p => (p._id || p.json_data.name || p.description) === e.target.value);
                             if (selected) setCurrentPrompt(selected);
                           }}
                         >
                           {prompts.map(p => (
-                            <option key={p._id || p.description} value={p._id || p.description}>
-                              {p.description} {p.json_data.is_active ? '(Actif)' : ''}
+                            <option key={p._id || p.json_data.name || p.description} value={p._id || p.json_data.name || p.description}>
+                              {p.json_data.name || p.description} {p.json_data.is_active ? '(Actif)' : ''}
                             </option>
                           ))}
                         </select>
@@ -1042,11 +1132,21 @@ export default function App() {
                    <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-200 focus-within:border-blue-500 transition-colors pb-2">
                       <input 
                         type="text" 
-                        value={currentPrompt?.description || ''} 
-                        onChange={(e) => setCurrentPrompt(p => p ? { ...p, description: e.target.value } : null)}
-                        className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none text-slate-800 placeholder-slate-300"
+                        value={currentPrompt?.json_data.name || currentPrompt?.description || ''} 
+                        onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, name: e.target.value } } : null)}
+                        className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none text-slate-800 placeholder-slate-300 flex-1"
                         placeholder="Nom de la version..."
                       />
+                      
+                      <select
+                        value={currentPrompt?.json_data.export_format || 'csv'}
+                        onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, export_format: e.target.value as 'csv' | 'html' } } : null)}
+                        className="bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-600 px-4 py-2 rounded-xl outline-none shrink-0 cursor-pointer border border-slate-200 hover:border-slate-300 transition-colors"
+                      >
+                        <option value="csv">FORMAT: CSV (STRUCTURED)</option>
+                        <option value="html">FORMAT: HTML (RAW)</option>
+                      </select>
+
                       {currentPrompt?.json_data.is_active ? (
                         <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-full border border-emerald-200 shadow-sm shrink-0">
                            <div className="relative">

@@ -157,59 +157,84 @@ export const api = {
   },
 
   // AI Assistant
-  async askAI(prompt: string, systemInstruction: string) {
-    const res = await authenticatedFetch(`${BASE_URL}/v4/assistant/ask`, {
-      method: 'POST',
-      body: JSON.stringify({
-        prompt,
-        system_instruction: systemInstruction,
-        provider: 'google',
-        level: 'mid',
-        json_schema: {
-          type: "object",
-          properties: {
-            machine_number: { type: "string" },
-            metadata: {
-              type: "array",
-              description: "Top-level custom fields requested by the system instruction (e.g. supervisor, building).",
-              items: {
-                type: "object",
-                properties: {
-                  key: { type: "string", description: "The exact name of the custom field." },
-                  value: { type: "string", description: "The value of the custom field." }
-                },
-                required: ["key", "value"]
-              }
-            },
-            steps: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  op: { type: "number" },
-                  description: { type: "string" },
-                  custom_fields: {
-                    type: "array",
-                    description: "Step-specific custom fields requested by the system instruction (e.g. duration, detail, tools).",
-                    items: {
-                      type: "object",
-                      properties: {
-                        key: { type: "string", description: "The exact name of the custom field." },
-                        value: { type: "string", description: "The value of the custom field." }
-                      },
-                      required: ["key", "value"]
-                    }
-                  }
-                },
-                required: ["op", "description"]
-              }
+  async askAI(prompt: string, systemInstruction: string, format: 'csv' | 'html' = 'csv') {
+    const payload: any = {
+      prompt,
+      system_instruction: systemInstruction,
+      provider: 'google',
+      level: 'high',
+    };
+
+    if (format === 'csv') {
+      payload.json_schema = {
+        type: "object",
+        properties: {
+          machine_number: { type: "string" },
+          metadata: {
+            type: "array",
+            description: "Top-level custom fields requested by the system instruction (e.g. supervisor, building).",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "The exact name of the custom field." },
+                value: { type: "string", description: "The value of the custom field." }
+              },
+              required: ["key", "value"]
             }
           },
-          required: ["machine_number", "steps"]
-        }
-      }),
+          steps: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                op: { type: "number" },
+                description: { type: "string" },
+                custom_fields: {
+                  type: "array",
+                  description: "Step-specific custom fields requested by the system instruction (e.g. duration, detail, tools).",
+                  items: {
+                    type: "object",
+                    properties: {
+                      key: { type: "string", description: "The exact name of the custom field." },
+                      value: { type: "string", description: "The value of the custom field." }
+                    },
+                    required: ["key", "value"]
+                  }
+                }
+              },
+              required: ["op", "description"]
+            }
+          }
+        },
+        required: ["machine_number", "steps"]
+      };
+    }
+
+    const res = await authenticatedFetch(`${BASE_URL}/v4/assistant/ask`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
+    
     const data = await res.json();
+    console.log("AskAI raw response:", data);
+    
+    if (format === 'html') {
+      const htmlText = data.results?.assistant_response
+        || data.assistant_response
+        || data.results?.answer 
+        || data.results?.text 
+        || data.results?.content
+        || data.results?.output
+        || data.results?.parsed_json 
+        || data.answer 
+        || data.text 
+        || data.content 
+        || data.output
+        || (Array.isArray(data) && data[0]?.output)
+        || (Array.isArray(data) && data[0]?.text)
+        || (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+      return htmlText;
+    }
     return data.results?.parsed_json;
   }
 };
