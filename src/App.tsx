@@ -26,7 +26,8 @@ import {
   LogOut,
   RefreshCw,
   Search,
-  X
+  X,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -705,18 +706,23 @@ export default function App() {
                           
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-1">
-                              <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || 'ID INCONNU'}</h3>
-
+                              <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">
+                                {(() => {
+                                  let title = f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || 'ID INCONNU';
+                                  if (title.startsWith('Fiche pour session')) {
+                                    title = f.json_data?.formData?.numero_maximo ? `Fiche ${f.json_data.formData.numero_maximo}` : 'Fiche Sans Nom';
+                                  }
+                                  return title;
+                                })()}
+                              </h3>
                             </div>
-                            <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description || 'Sans description'}"</p>
+                            {(!f.description || f.description.startsWith('Fiche pour session')) ? null : (
+                              <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description}"</p>
+                            )}
                             {f._id && <span className="text-[8px] font-mono text-slate-400 mt-1 block">ID: {f._id}</span>}
                           </div>
 
                           <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
-                            <div className="flex flex-col items-center">
-                              <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">{f.json_data?.json_source?.filter(s => s.transcription)?.length || 0}</span>
-                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">SEGMENTS</span>
-                            </div>
                             <div className="flex flex-col items-center">
                               <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{f.json_data?.author?.fullname?.split(' ')[0] || 'Inconnu'}</span>
                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">AUTEUR</span>
@@ -749,11 +755,13 @@ export default function App() {
                             >
                               <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
                                 {f.json_data?.json_source?.map((src, i) => {
-                                  const showDescription = src.description && 
-                                                          src.description.toLowerCase() !== 'transcribed' && 
-                                                          src.description.trim() !== (src.transcription || '').trim();
                                   const isImage = ['photo', 'image'].includes(src.type.toLowerCase());
                                   const isAudio = src.type.toLowerCase() === 'audio';
+                                  const isText = !isImage && !isAudio;
+
+                                  const showDescription = isText && !!src.description && 
+                                                          src.description.toLowerCase() !== 'transcribed' && 
+                                                          src.description.trim() !== (src.transcription || '').trim();
 
                                   return (
                                   <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
@@ -923,8 +931,16 @@ export default function App() {
                     const isNewlyGenerated = g.json_data.generated_at === newlyGeneratedTime;
                     const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
                     let ficheName = 'INCONNU';
+                    let authorName = '';
                     if (sourceFiche) {
                       ficheName = sourceFiche.json_data?.name || sourceFiche.json_data?.formData?.nomFiche || sourceFiche.app_identifier || 'INCONNU';
+                      if (ficheName.startsWith('Fiche pour session')) {
+                        ficheName = sourceFiche.json_data?.formData?.numero_maximo ? `Fiche ${sourceFiche.json_data.formData.numero_maximo}` : 'Fiche Sans Nom';
+                      }
+                      authorName = sourceFiche.json_data?.author?.fullname || '';
+                      if (authorName.includes('@')) {
+                        authorName = authorName.split('@')[0];
+                      }
                     }
                     if (ficheName.length > 25) ficheName = ficheName.substring(0, 25) + '...';
 
@@ -946,11 +962,12 @@ export default function App() {
                            </div>
                            
                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-3 mb-1 flex-wrap">
-                                 <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                 <h3 className="text-lg font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
                                  {!isHtmlGamme && <Badge variant="blue">{g.json_data.steps.length} OP</Badge>}
                                  <Badge variant="indigo"><span className="flex items-center gap-1"><FileText className="w-3 h-3 opacity-80" /> {ficheName}</span></Badge>
                                  <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
+                                 {authorName && <Badge variant="slate"><span className="flex items-center gap-1"><User className="w-3 h-3 opacity-80" /> {authorName}</span></Badge>}
                               </div>
                               {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
                            </div>
