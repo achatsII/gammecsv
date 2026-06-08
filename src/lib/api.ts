@@ -2,7 +2,9 @@ import { Fiche, Gamme, SystemPrompt, APP_ID } from '../types';
 import { authStore } from '../utils/authStore';
 import { checkAndProactiveRefresh, refreshAccessToken } from '../utils/authService';
 
-const BASE_URL = 'https://qa.gateway.intelligenceindustrielle.com/api';
+const BASE_URL = import.meta.env.NEXT_PUBLIC_API_BASE_URL 
+    ? `${import.meta.env.NEXT_PUBLIC_API_BASE_URL}/api`
+    : ''; // Strict env tracking, no fallback
 
 const decodeJWT = (token: string): any => {
     try {
@@ -114,6 +116,36 @@ export const api = {
     return res.json();
   },
 
+  // Sessions
+  async getSession(id: string): Promise<any> {
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/sessions/one/${id}`, {
+      method: 'GET',
+    });
+    const data = await res.json();
+    return data.result || data;
+  },
+
+  async updateSessionData(id: string, data: { notes?: any[], json_source?: any }): Promise<any> {
+    const currentSession = await this.getSession(id);
+    if (!currentSession) throw new Error("Session not found");
+    
+    currentSession.json_data = currentSession.json_data || {};
+    if (data.notes !== undefined) {
+      currentSession.json_data.notes = data.notes;
+    }
+    if (data.json_source !== undefined) {
+      currentSession.json_data.json_source = data.json_source;
+    }
+    
+    const { _id, ...payload } = currentSession;
+    const res = await authenticatedFetch(`${BASE_URL}/v1/data/sessions/one/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("updateSessionData failed with status:", res.status);
+    return res.json();
+  },
+
   async getGammes(): Promise<Gamme[]> {
     const res = await authenticatedFetch(`${BASE_URL}/v1/data/gammes/all`, {
       method: 'GET',
@@ -158,11 +190,14 @@ export const api = {
 
   // AI Assistant
   async askAI(prompt: string, systemInstruction: string, format: 'csv' | 'html' = 'csv') {
+    const isQA = import.meta.env.NEXT_PUBLIC_APP_ENV === 'qa';
+
     const payload: any = {
       prompt,
       system_instruction: systemInstruction,
       provider: 'google',
       level: 'high',
+      ...(!isQA && { useSearch: false })
     };
 
     if (format === 'csv') {
@@ -210,7 +245,11 @@ export const api = {
       };
     }
 
-    const res = await authenticatedFetch(`${BASE_URL}/v4/assistant/ask`, {
+    const askAiEndpoint = isQA 
+      ? `${BASE_URL}/v4/assistant/ask` 
+      : `${BASE_URL}/v2/assistant/ask`;
+
+    const res = await authenticatedFetch(askAiEndpoint, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -288,6 +327,27 @@ export const api = {
       }
       return htmlText;
     }
-    return data.results?.parsed_json;
+    
+    let jsonResult = data.results?.parsed_json;
+    if (!jsonResult) {
+      let rawText = data.results?.assistant_response || data.assistant_response;
+      if (typeof rawText === 'string') {
+        rawText = rawText.trim();
+        if (rawText.startsWith('```')) {
+          const lines = rawText.split('\n');
+          if (lines[0].startsWith('```')) lines.shift();
+          if (lines[lines.length - 1].startsWith('```')) lines.pop();
+          rawText = lines.join('\n').trim();
+        }
+        try {
+          jsonResult = JSON.parse(rawText);
+        } catch (e) {
+          console.error("Failed to parse assistant_response as JSON:", e);
+          jsonResult = rawText; // Fallback
+        }
+      }
+    }
+    
+    return jsonResult;
   }
 };

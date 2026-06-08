@@ -273,11 +273,35 @@ export default function App() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const [fichesData, gammesData, promptData] = await Promise.all([
+      const [fichesDataRaw, gammesData, promptData] = await Promise.all([
         api.filterFiches([APP_ID]).catch(() => []),
         api.getGammes().catch(() => []),
         api.getPrompts().catch(() => [])
       ]);
+
+      // Hybrid merge: Fetch the underlying Session for each Fiche to get the live 'notes' and 'json_source'
+      const fichesData = await Promise.all(fichesDataRaw.map(async (fiche) => {
+        const sessionId = fiche.json_data?.sessionId;
+        if (sessionId) {
+          try {
+            const sessionData = await api.getSession(sessionId);
+            if (sessionData && sessionData.json_data) {
+              if (sessionData.json_data.notes) {
+                fiche.json_data.notes = sessionData.json_data.notes;
+              }
+              if (sessionData.json_data.json_source) {
+                fiche.json_data.json_source = sessionData.json_data.json_source;
+              }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch session ${sessionId} for fiche ${fiche._id}`, err);
+          }
+        }
+        return fiche;
+      }));
+
+      // Sort fiches by date descending
+      fichesData.sort((a, b) => new Date(b.lastModified || b.createdAt || 0).getTime() - new Date(a.lastModified || a.createdAt || 0).getTime());
 
       setFiches(fichesData);
       setGammes(gammesData);
@@ -444,10 +468,27 @@ export default function App() {
 
   const handleUpdateFicheTranscription = (ficheId: string, srcIndex: number, newTranscription: string) => {
     setFiches(prev => prev.map(f => {
-      if (f._id === ficheId && f.json_data?.json_source) {
-        const newSource = [...f.json_data.json_source];
-        newSource[srcIndex] = { ...newSource[srcIndex], transcription: newTranscription };
-        return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+      if (f._id === ficheId) {
+        if (Array.isArray(f.json_data?.notes)) {
+          const newNotes = [...f.json_data.notes];
+          if (newNotes[srcIndex]) {
+            newNotes[srcIndex] = { ...newNotes[srcIndex], transcription: newTranscription, text: newTranscription };
+            return { ...f, json_data: { ...f.json_data, notes: newNotes } };
+          }
+        } else if (f.json_data?.json_source) {
+          if (Array.isArray(f.json_data.json_source)) {
+            const newSource = [...f.json_data.json_source];
+            newSource[srcIndex] = { ...newSource[srcIndex], transcription: newTranscription };
+            return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+          } else {
+            let audios = f.json_data.json_source.audioTranscriptions || [];
+            if (srcIndex < audios.length) {
+              const newAudios = [...audios];
+              newAudios[srcIndex] = { ...newAudios[srcIndex], transcription: newTranscription };
+              return { ...f, json_data: { ...f.json_data, json_source: { ...f.json_data.json_source, audioTranscriptions: newAudios } } };
+            }
+          }
+        }
       }
       return f;
     }));
@@ -455,10 +496,38 @@ export default function App() {
 
   const handleUpdateFicheDescription = (ficheId: string, srcIndex: number, newDescription: string) => {
     setFiches(prev => prev.map(f => {
-      if (f._id === ficheId && f.json_data?.json_source) {
-        const newSource = [...f.json_data.json_source];
-        newSource[srcIndex] = { ...newSource[srcIndex], description: newDescription };
-        return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+      if (f._id === ficheId) {
+        if (Array.isArray(f.json_data?.notes)) {
+          const newNotes = [...f.json_data.notes];
+          if (newNotes[srcIndex]) {
+            newNotes[srcIndex] = { ...newNotes[srcIndex], aiAnalysis: newDescription, text: newDescription };
+            return { ...f, json_data: { ...f.json_data, notes: newNotes } };
+          }
+        } else if (f.json_data?.json_source) {
+          if (Array.isArray(f.json_data.json_source)) {
+            const newSource = [...f.json_data.json_source];
+            newSource[srcIndex] = { ...newSource[srcIndex], description: newDescription };
+            return { ...f, json_data: { ...f.json_data, json_source: newSource } };
+          } else {
+            let audios = f.json_data.json_source.audioTranscriptions || [];
+            let texts = f.json_data.json_source.textNotes || [];
+            let images = f.json_data.json_source.imageDescriptions || [];
+            
+            if (srcIndex < audios.length) {
+              return f;
+            } else if (srcIndex < audios.length + texts.length) {
+              const idx = srcIndex - audios.length;
+              const newTexts = [...texts];
+              newTexts[idx] = { ...newTexts[idx], text: newDescription };
+              return { ...f, json_data: { ...f.json_data, json_source: { ...f.json_data.json_source, textNotes: newTexts } } };
+            } else if (srcIndex < audios.length + texts.length + images.length) {
+              const idx = srcIndex - audios.length - texts.length;
+              const newImages = [...images];
+              newImages[idx] = { ...newImages[idx], description: newDescription };
+              return { ...f, json_data: { ...f.json_data, json_source: { ...f.json_data.json_source, imageDescriptions: newImages } } };
+            }
+          }
+        }
       }
       return f;
     }));
@@ -705,16 +774,54 @@ export default function App() {
                           </div>
                           
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 mb-1">
-                              <h3 className="text-xl font-black tracking-tight uppercase leading-none truncate">
-                                {(() => {
-                                  let title = f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || 'ID INCONNU';
-                                  if (title.startsWith('Fiche pour session')) {
-                                    title = f.json_data?.formData?.numero_maximo ? `Fiche ${f.json_data.formData.numero_maximo}` : 'Fiche Sans Nom';
+                            <div className="flex items-center gap-3 mb-1 w-full">
+                              <input 
+                                className="text-xl font-black tracking-tight uppercase leading-none truncate bg-transparent border-none outline-none w-full placeholder-slate-300"
+                                value={(() => {
+                                  let title = f.json_data?.formData?.nom_de_la_machine || f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || 'ID INCONNU';
+                                  if (title.startsWith('Fiche pour session') || f.app_identifier === title || title === 'ID INCONNU') {
+                                    if (f.json_data?.formData?.nom_de_la_machine) {
+                                      title = f.json_data.formData.nom_de_la_machine;
+                                    } else if (f.json_data?.formData?.numero_maximo) {
+                                      title = `Fiche ${f.json_data.formData.numero_maximo}`;
+                                    } else {
+                                      title = 'Fiche Sans Nom';
+                                    }
                                   }
                                   return title;
                                 })()}
-                              </h3>
+                                onChange={(e) => {
+                                  setFiches(prev => prev.map(prevF => {
+                                    if (prevF._id === f._id) {
+                                      return { 
+                                        ...prevF, 
+                                        description: e.target.value,
+                                        json_data: { 
+                                          ...prevF.json_data, 
+                                          formData: { 
+                                            ...(prevF.json_data?.formData || {}), 
+                                            nom_de_la_machine: e.target.value 
+                                          } 
+                                        } 
+                                      };
+                                    }
+                                    return prevF;
+                                  }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={async (e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    e.currentTarget.blur();
+                                    try {
+                                      await api.updateFiche(f._id!, f);
+                                    } catch (err) {
+                                      console.error("Failed to update name", err);
+                                    }
+                                  }
+                                }}
+                                title="Appuyez sur Entrée pour sauvegarder"
+                              />
                             </div>
                             {(!f.description || f.description.startsWith('Fiche pour session')) ? null : (
                               <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description}"</p>
@@ -754,101 +861,165 @@ export default function App() {
                               className="overflow-hidden"
                             >
                               <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
-                                {f.json_data?.json_source?.map((src, i) => {
-                                  const isImage = ['photo', 'image'].includes(src.type.toLowerCase());
-                                  const isAudio = src.type.toLowerCase() === 'audio';
-                                  const isText = !isImage && !isAudio;
+                                {(() => {
+                                  const rawNotes = f.json_data?.notes;
+                                  const rawSource = f.json_data?.json_source;
+                                  let sources: any[] = [];
+                                  
+                                  if (Array.isArray(rawNotes)) {
+                                    sources = rawNotes.map((n: any) => ({
+                                      type: n.type === 'audio' ? 'audio' : n.type === 'photo' ? 'photo' : 'texte',
+                                      title: n.type === 'audio' ? 'Audio' : n.type === 'photo' ? 'Image' : 'Note',
+                                      description: n.aiAnalysis || (n.type !== 'audio' ? n.text : ''),
+                                      transcription: n.type === 'audio' ? (n.text || n.transcription || '') : (n.transcription || ''),
+                                      media_url: n.mediaUrl || n.mediaContent,
+                                      created_at: n.timestamp
+                                    }));
+                                  } else if (Array.isArray(rawSource)) {
+                                    sources = rawSource;
+                                  } else if (rawSource && typeof rawSource === 'object') {
+                                    if (Array.isArray(rawSource.audioTranscriptions)) {
+                                      sources.push(...rawSource.audioTranscriptions.map((a: any) => ({
+                                        type: 'audio',
+                                        title: 'Audio',
+                                        description: 'Transcribed',
+                                        transcription: a.transcription,
+                                        media_url: a.audioUrl,
+                                        created_at: a.timestamp
+                                      })));
+                                    }
+                                    if (Array.isArray(rawSource.textNotes)) {
+                                      sources.push(...rawSource.textNotes.map((t: any) => ({
+                                        type: 'texte',
+                                        title: 'Note Textuelle',
+                                        description: t.text,
+                                        created_at: t.timestamp
+                                      })));
+                                    }
+                                    if (Array.isArray(rawSource.imageDescriptions)) {
+                                      sources.push(...rawSource.imageDescriptions.map((i: any) => ({
+                                        type: 'photo',
+                                        title: 'Image',
+                                        description: i.description,
+                                        media_url: i.imageUrl,
+                                        created_at: i.timestamp
+                                      })));
+                                    }
+                                  }
+                                  
+                                  if (sources.length === 0) {
+                                    return <p className="text-xs text-slate-400 italic text-center py-4">Aucune donnée multimédia disponible.</p>;
+                                  }
 
-                                  const showDescription = isText && !!src.description && 
-                                                          src.description.toLowerCase() !== 'transcribed' && 
-                                                          src.description.trim() !== (src.transcription || '').trim();
-
-                                  return (
-                                  <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
-                                    {/* Header */}
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="slate">{src.type}</Badge>
-                                      <h4 className="text-xs font-black uppercase text-slate-800 truncate">{src.title}</h4>
-                                      <span className="text-[9px] font-bold text-slate-400 ml-auto shrink-0">{new Date(src.created_at).toLocaleString('fr-CA')}</span>
-                                    </div>
-                                    
-                                    <div className="flex flex-col md:flex-row gap-4 items-start">
-                                      {/* Media Column (Only for images) */}
-                                      {isImage && src.media_url && (
-                                        <button onClick={(e) => { e.stopPropagation(); setFullscreenImage(src.media_url!); }} title="Voir l'image en plein écran" className="w-full md:w-32 shrink-0 outline-none text-left">
-                                          <img src={src.media_url} alt={src.title} className="w-full h-24 object-cover rounded-[12px] border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in" />
-                                        </button>
-                                      )}
-
-                                      {/* Content Column */}
-                                      <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
-                                        {/* Audio Player */}
-                                        {isAudio && src.media_url && (
-                                          <audio controls src={src.media_url} className="w-full h-10 outline-none" />
+                                  return sources.map((src, i) => {
+                                    const srcType = typeof src?.type === 'string' ? src.type : '';
+                                    const isImage = ['photo', 'image'].includes(srcType.toLowerCase());
+                                    const isAudio = srcType.toLowerCase() === 'audio';
+                                    const isText = !isImage && !isAudio;
+  
+                                    const srcDesc = typeof src?.description === 'string' ? src.description : '';
+                                    const srcTrans = typeof src?.transcription === 'string' ? src.transcription : '';
+                                    const showDescription = isText && !!srcDesc && 
+                                                            srcDesc.toLowerCase() !== 'transcribed' && 
+                                                            srcDesc.trim() !== srcTrans.trim();
+  
+                                    return (
+                                    <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
+                                      {/* Header */}
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="slate">{src.type}</Badge>
+                                        <h4 className="text-xs font-black uppercase text-slate-800 truncate">{src.title}</h4>
+                                        <span className="text-[9px] font-bold text-slate-400 ml-auto shrink-0">{src.created_at ? new Date(src.created_at).toLocaleString('fr-CA') : ''}</span>
+                                      </div>
+                                      
+                                      <div className="flex flex-col md:flex-row gap-4 items-start">
+                                        {/* Media Column (Only for images) */}
+                                        {isImage && src.media_url && (
+                                          <button onClick={(e) => { e.stopPropagation(); setFullscreenImage(src.media_url!); }} title="Voir l'image en plein écran" className="w-full md:w-32 shrink-0 outline-none text-left">
+                                            <img src={src.media_url} alt={src.title} className="w-full h-24 object-cover rounded-[12px] border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in" />
+                                          </button>
                                         )}
-
-                                        {showDescription && (
-                                          <div className="flex flex-col gap-1">
-                                            <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
-                                            <textarea 
-                                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                              value={src.description}
-                                              onChange={(e) => {
-                                                e.target.style.height = 'auto';
-                                                e.target.style.height = e.target.scrollHeight + 'px';
-                                                handleUpdateFicheDescription(f._id!, i, e.target.value);
-                                              }}
-                                              onKeyDown={async (e) => {
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                  e.preventDefault();
-                                                  try {
-                                                    await api.updateFiche(f._id!, f);
-                                                  } catch (err) {
-                                                    console.error("Failed to save fiche", err);
+  
+                                        {/* Content Column */}
+                                        <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
+                                          {/* Audio Player */}
+                                          {isAudio && src.media_url && (
+                                            <audio controls src={src.media_url} className="w-full h-10 outline-none" />
+                                          )}
+  
+                                          {showDescription && (
+                                            <div className="flex flex-col gap-1">
+                                              <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
+                                              <textarea 
+                                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                value={srcDesc}
+                                                onChange={(e) => {
+                                                  e.target.style.height = 'auto';
+                                                  e.target.style.height = e.target.scrollHeight + 'px';
+                                                  handleUpdateFicheDescription(f._id!, i, e.target.value);
+                                                }}
+                                                onKeyDown={async (e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    e.currentTarget.blur();
+                                                    try { 
+                                                      if (f.json_data?.sessionId) {
+                                                        await api.updateSessionData(f.json_data.sessionId, { 
+                                                          notes: f.json_data.notes,
+                                                          json_source: f.json_data.json_source
+                                                        }); 
+                                                      } else {
+                                                        await api.updateFiche(f._id!, f); 
+                                                      }
+                                                    } catch (err) { console.error("Failed", err); }
                                                   }
-                                                }
-                                              }}
-                                              title="Appuyez sur Entrée pour sauvegarder"
-                                              className="text-[11px] text-slate-600 leading-relaxed font-medium w-full bg-slate-50/50 border border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-2 resize-none overflow-hidden transition-all outline-none"
-                                              rows={1}
-                                            />
-                                          </div>
-                                        )}
-
-                                        {src.transcription !== undefined && (
-                                          <div className="flex flex-col gap-1">
-                                            <span className="text-[9px] font-black uppercase text-slate-400">Transcription</span>
-                                            <textarea 
-                                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                              value={src.transcription}
-                                              onChange={(e) => {
-                                                e.target.style.height = 'auto';
-                                                e.target.style.height = e.target.scrollHeight + 'px';
-                                                handleUpdateFicheTranscription(f._id!, i, e.target.value);
-                                              }}
-                                              onKeyDown={async (e) => {
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                  e.preventDefault();
-                                                  try {
-                                                    await api.updateFiche(f._id!, f);
-                                                  } catch (err) {
-                                                    console.error("Failed to save fiche", err);
+                                                }}
+                                                title="Appuyez sur Entrée pour sauvegarder"
+                                                className="text-[11px] text-slate-600 leading-relaxed font-medium w-full bg-slate-50/50 border border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-2 resize-none overflow-hidden transition-all outline-none"
+                                                rows={1}
+                                              />
+                                            </div>
+                                          )}
+  
+                                          {typeof srcTrans === 'string' && srcTrans !== '' && (
+                                            <div className="flex flex-col gap-1">
+                                              <span className="text-[9px] font-black uppercase text-slate-400">Transcription</span>
+                                              <textarea 
+                                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                value={srcTrans}
+                                                onChange={(e) => {
+                                                  e.target.style.height = 'auto';
+                                                  e.target.style.height = e.target.scrollHeight + 'px';
+                                                  handleUpdateFicheTranscription(f._id!, i, e.target.value);
+                                                }}
+                                                onKeyDown={async (e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    e.currentTarget.blur();
+                                                    try { 
+                                                      if (f.json_data?.sessionId) {
+                                                        await api.updateSessionData(f.json_data.sessionId, { 
+                                                          notes: f.json_data.notes,
+                                                          json_source: f.json_data.json_source
+                                                        }); 
+                                                      } else {
+                                                        await api.updateFiche(f._id!, f); 
+                                                      }
+                                                    } catch (err) { console.error("Failed", err); }
                                                   }
-                                                }
-                                              }}
-                                              title="Appuyez sur Entrée pour sauvegarder"
-                                              className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
-                                              rows={1}
-                                            />
-                                          </div>
-                                        )}
+                                                }}
+                                                title="Appuyez sur Entrée pour sauvegarder"
+                                                className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
+                                                rows={1}
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                )})}
-                                {(!f.json_data?.json_source || f.json_data.json_source.length === 0) && (
-                                  <p className="text-xs text-slate-400 italic text-center py-4">Aucune donnée multimédia disponible.</p>
-                                )}
+                                    );
+                                  });
+                                })()}
                               </div>
                             </motion.div>
                           )}
@@ -1021,7 +1192,7 @@ export default function App() {
                                     <>
                                       {g.json_data.metadata && g.json_data.metadata.length > 0 && (
                                         <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
-                                          {g.json_data.metadata.map((meta, mIdx) => (
+                                          {Array.isArray(g.json_data.metadata) && g.json_data.metadata.map((meta, mIdx) => (
                                             <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
                                               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
                                               <input
@@ -1037,7 +1208,7 @@ export default function App() {
                                       )}
 
                                       <div className="space-y-2">
-                                        {g.json_data.steps.map((s, i) => (
+                                        {Array.isArray(g.json_data.steps) && g.json_data.steps.map((s, i) => (
                                           <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
                                             <div className="flex gap-3 items-start w-full">
                                               <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
@@ -1046,7 +1217,7 @@ export default function App() {
                                                 <textarea 
                                                   rows={1}
                                                   ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                                  value={s.description} 
+                                                  value={s?.description || ''} 
                                                   onChange={(e) => {
                                                     e.target.style.height = 'auto';
                                                     e.target.style.height = e.target.scrollHeight + 'px';
@@ -1063,7 +1234,7 @@ export default function App() {
                                                   className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden" 
                                                 />
                                                 
-                                                {s.custom_fields && s.custom_fields.length > 0 && (
+                                                {s.custom_fields && Array.isArray(s.custom_fields) && s.custom_fields.length > 0 && (
                                                   <div className="flex flex-col gap-1.5 mt-1">
                                                     {s.custom_fields.map((field, fIdx) => (
                                                       <div key={fIdx} className="flex items-center gap-2">

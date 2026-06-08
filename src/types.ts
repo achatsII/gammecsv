@@ -6,6 +6,9 @@ export interface Fiche {
   json_data: {
     sessionId?: string;
     isComplete?: boolean;
+    name?: string;
+    auteur?: any;
+    notes?: any[];
     author: {
       fullname: string;
       email: string;
@@ -14,16 +17,10 @@ export interface Fiche {
       numero_maximo?: string;
       [key: string]: any;
     };
-    json_source: {
-      type: string;
-      title: string;
-      description: string;
-      transcription?: string;
-      media_url?: string;
-      created_at: string;
-    }[];
+    json_source?: any;
     app_identifier: string;
     createdAt: string;
+    [key: string]: any;
   };
 }
 

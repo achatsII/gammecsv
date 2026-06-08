@@ -2,7 +2,7 @@ import { authStore } from './authStore';
 import { storage } from './storage';
 import { APP_ID } from '../types';
 
-export const API_BASE_URL = "https://qa.gateway.intelligenceindustrielle.com";
+export const API_BASE_URL = import.meta.env.NEXT_PUBLIC_API_BASE_URL;
 export const AUTH_BASE = `${API_BASE_URL}/api/v1/auth`;
 
 const generateRandomString = (length = 64): string => {
