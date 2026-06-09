@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './lib/api';
 import { authStore } from './utils/authStore';
-import { checkAndProactiveRefresh, handleAuthCallback } from './utils/authService';
+import { checkAndProactiveRefresh, handleAuthCallback, logout } from './utils/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { Fiche, Gamme, SystemPrompt, APP_ID } from './types';
-import { 
-  FileText, 
-  Settings as SettingsIcon, 
-  Cpu, 
-  Download, 
-  Mic, 
-  Activity, 
+import {
+  FileText,
+  Settings as SettingsIcon,
+  Cpu,
+  Download,
+  Mic,
+  Activity,
   Table2,
-  Check, 
+  Check,
   Database,
   Save,
   Loader2,
@@ -175,7 +175,7 @@ const MOCK_GAMMES: Gamme[] = [
 
 const getFicheTitle = (f: Fiche | undefined): string => {
   if (!f) return '';
-  
+
   // 1. Highest priority: Explicitly edited title 'nomFiche'
   if (f.json_data?.formData?.nomFiche && f.json_data.formData.nomFiche.trim() !== '') {
     return f.json_data.formData.nomFiche.trim();
@@ -245,17 +245,17 @@ export default function App() {
   const filteredFiches = fiches.filter(f => {
     if (!ficheSearch) return true;
     const searchLower = ficheSearch.toLowerCase();
-    
+
     const maximo = f.json_data?.formData?.numero_maximo || '';
     const desc = f.description || '';
     const author = f.json_data?.author?.fullname || '';
     const name = getFicheTitle(f);
-    
+
     if (name.toLowerCase().includes(searchLower)) return true;
     if (maximo.toLowerCase().includes(searchLower)) return true;
     if (desc.toLowerCase().includes(searchLower)) return true;
     if (author.toLowerCase().includes(searchLower)) return true;
-    
+
     const rawNotes = f.json_data?.notes;
     if (Array.isArray(rawNotes)) {
       for (const n of rawNotes) {
@@ -292,24 +292,24 @@ export default function App() {
   const filteredGammes = gammes.filter(g => {
     if (!gammeSearch) return true;
     const searchLower = gammeSearch.toLowerCase();
-    
+
     const machine = g.json_data.machine_number || '';
     const desc = g.description || '';
-    
+
     const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
     const ficheName = sourceFiche ? getFicheTitle(sourceFiche) : '';
-    
+
     if (ficheName.toLowerCase().includes(searchLower)) return true;
     if (machine.toLowerCase().includes(searchLower)) return true;
     if (desc.toLowerCase().includes(searchLower)) return true;
-    
+
     if (g.json_data.metadata) {
       for (const meta of g.json_data.metadata) {
         if (meta.key.toLowerCase().includes(searchLower)) return true;
         if (meta.value.toLowerCase().includes(searchLower)) return true;
       }
     }
-    
+
     if (g.json_data.steps) {
       for (const step of g.json_data.steps) {
         if (step.description.toLowerCase().includes(searchLower)) return true;
@@ -321,7 +321,7 @@ export default function App() {
         }
       }
     }
-    
+
     return false;
   });
 
@@ -367,7 +367,7 @@ export default function App() {
         if (currentPrompt) {
           match = promptData.find(p => (p.json_data.name || p.description) === (currentPrompt.json_data.name || currentPrompt.description) && p.json_data.content === currentPrompt.json_data.content);
         }
-        
+
         if (match) {
           setCurrentPrompt(match as SystemPrompt);
         } else {
@@ -394,7 +394,7 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       await authStore.hydrate();
-      
+
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('authorization_code');
       const state = urlParams.get('state');
@@ -409,7 +409,7 @@ export default function App() {
         const valid = await checkAndProactiveRefresh();
         setIsAuthenticated(valid);
       }
-      
+
       setIsAuthChecking(false);
     };
 
@@ -422,9 +422,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => { 
+  useEffect(() => {
     if (isAuthenticated) {
-      refresh(); 
+      refresh();
     }
   }, [isAuthenticated]);
 
@@ -446,12 +446,12 @@ export default function App() {
     if (!activePrompt) {
       console.warn("Aucune instruction système active trouvée, utilisation du prompt en cours d'édition ou par défaut.");
     }
-    
+
     const promptToUse = activePrompt || currentPrompt;
     if (!promptToUse) return;
 
     setGenerating(fiche._id);
-    
+
     // Convertir l'objet fiche entier en chaîne JSON pour l'envoyer à l'IA
     const prompt = JSON.stringify(fiche, null, 2);
 
@@ -567,7 +567,7 @@ export default function App() {
             let audios = f.json_data.json_source.audioTranscriptions || [];
             let texts = f.json_data.json_source.textNotes || [];
             let images = f.json_data.json_source.imageDescriptions || [];
-            
+
             if (srcIndex < audios.length) {
               return f;
             } else if (srcIndex < audios.length + texts.length) {
@@ -601,7 +601,7 @@ export default function App() {
 
   const exportCSV = () => {
     const targets = gammes.filter(g => selectedGammes.includes(g._id!));
-    
+
     // Discover all unique custom field keys across metadata and step custom_fields
     const customKeysSet = new Set<string>();
     targets.forEach(g => {
@@ -614,38 +614,38 @@ export default function App() {
         }
       });
     });
-    
+
     const customKeys = Array.from(customKeysSet);
     let csv = `Machine,Operation,Description${customKeys.length > 0 ? ',' + customKeys.join(',') : ''}\n`;
-    
+
     targets.forEach(g => {
       // Create a map of top-level metadata for easy access
       const metaMap: Record<string, string> = {};
       if (g.json_data.metadata) {
         g.json_data.metadata.forEach(m => metaMap[m.key] = m.value);
       }
-      
+
       g.json_data.steps.forEach(s => {
         const desc = s.description ? s.description.replace(/"/g, '""') : '';
-        
+
         // Create a map of step-level custom fields
         const stepFieldMap: Record<string, string> = {};
         if (s.custom_fields) {
           s.custom_fields.forEach(f => stepFieldMap[f.key] = f.value);
         }
-        
+
         let row = `"${g.json_data.machine_number}","${s.op}","${desc}"`;
-        
+
         // Append all custom fields (metadata or step specific)
         customKeys.forEach(key => {
           let val = stepFieldMap[key] || metaMap[key] || "";
           row += `,"${val.replace(/"/g, '""')}"`;
         });
-        
+
         csv += row + "\n";
       });
     });
-    
+
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -695,11 +695,11 @@ export default function App() {
       if (makeActive) {
         payload.json_data.is_active = true;
         const activePrompts = prompts.filter(p => p.json_data.is_active && p._id !== payload._id);
-        await Promise.all(activePrompts.map(ap => 
+        await Promise.all(activePrompts.map(ap =>
           api.updatePrompt(ap._id!, { ...ap, json_data: { ...ap.json_data, is_active: false } })
         ));
       }
-      
+
       if (payload._id) {
         await api.updatePrompt(payload._id, payload);
       } else {
@@ -730,13 +730,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <div className="bg-scene"><div className="orb orb-1"/><div className="orb orb-2"/><div className="orb orb-3"/><div className="absolute inset-0 backdrop-blur-[80px]"/></div>
-      <div className="grain"/>
+      <div className="bg-scene"><div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" /><div className="absolute inset-0 backdrop-blur-[80px]" /></div>
+      <div className="grain" />
 
       <header className="fixed top-0 inset-x-0 h-20 glass-panel z-50 flex items-center px-10 justify-between">
         <div className="flex items-center gap-3">
           <Table2 className="w-8 h-8 text-blue-600" />
-          <h1 className="text-xl font-black tracking-tighter uppercase">Gamme<span className="text-blue-600">Csv</span></h1>
+          <h1 className="text-xl font-black tracking-tighter uppercase"><span className="text-blue-600">Gamme</span></h1>
         </div>
 
         <nav className="flex gap-1 bg-white/40 p-1.5 rounded-[20px]">
@@ -755,37 +755,37 @@ export default function App() {
         </nav>
 
         <div className="flex items-center gap-4">
-           <button 
-             onClick={refresh}
-             disabled={loading}
-             className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-white/60 transition-all hover:scale-105 active:scale-95 group shadow-sm disabled:opacity-50"
-             title="Actualiser les données"
-           >
-              <RefreshCw className={`w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-slate-800 ${loading ? 'animate-spin' : ''}`} />
-           </button>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-white/60 transition-all hover:scale-105 active:scale-95 group shadow-sm disabled:opacity-50"
+            title="Actualiser les données"
+          >
+            <RefreshCw className={`w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-slate-800 ${loading ? 'animate-spin' : ''}`} />
+          </button>
 
-           <button 
-             onClick={() => { authStore.clear(); window.location.reload(); }}
-             className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-red-50 hover:border-red-200 transition-all group shadow-sm"
-             title="Déconnexion"
-           >
-             <LogOut className="w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-red-500" />
-           </button>
+          <button
+            onClick={() => logout()}
+            className="w-12 h-12 rounded-2xl bg-white/40 flex items-center justify-center border border-white/60 hover:bg-red-50 hover:border-red-200 transition-all group shadow-sm"
+            title="Déconnexion"
+          >
+            <LogOut className="w-5 h-5 opacity-60 group-hover:opacity-100 transition-all text-red-500" />
+          </button>
         </div>
       </header>
 
       <main className="pt-32 px-10 pb-20 max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
-            
+
             {activeTab === 'fiches' && (
               <div className="space-y-12">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                   <div className="flex flex-col gap-3">
-                     <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase leading-none flex items-center gap-5"><span className="whitespace-nowrap">Fiches MultiModal</span> <span className="text-2xl md:text-3xl text-blue-500 bg-blue-500/10 px-4 py-1.5 md:px-5 md:py-2 rounded-[20px] translate-y-1">{fiches.length}</span></h2>
-                     <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
+                    <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase leading-none flex items-center gap-5"><span className="whitespace-nowrap">Fiches</span> <span className="text-2xl md:text-3xl text-blue-500 bg-blue-500/10 px-4 py-1.5 md:px-5 md:py-2 rounded-[20px] translate-y-1">{fiches.length}</span></h2>
+                    <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
                   </div>
-                  
+
                   {/* Search Bar for Fiches */}
                   <div className="relative w-full md:max-w-md shrink-0">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -808,7 +808,7 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="flex flex-col gap-4">
                   {filteredFiches.length === 0 && (
                     <div className="glass-card p-12 text-center rounded-[28px] border-2 border-dashed border-white/40">
@@ -820,17 +820,17 @@ export default function App() {
                   {filteredFiches.map(f => {
                     const isExpanded = expandedFiches.includes(f._id);
                     return (
-                      <div key={f._id} 
+                      <div key={f._id}
                         className="glass-card p-6 rounded-[28px] group transition-all border-2 border-white/80 hover:border-blue-200"
                       >
                         <div className="flex items-center gap-8 cursor-pointer" onClick={() => setExpandedFiches(prev => prev.includes(f._id) ? prev.filter(x => x !== f._id) : [...prev, f._id])}>
                           <div className="w-12 h-12 bg-blue-500/10 rounded-[18px] flex items-center justify-center text-blue-600 shrink-0">
                             <FileText className="w-6 h-6" />
                           </div>
-                          
+
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-1 w-full">
-                              <input 
+                              <input
                                 className="text-xl font-black tracking-tight uppercase leading-none truncate bg-transparent border-none outline-none w-full placeholder-slate-300"
                                 value={(() => {
                                   return getFicheTitle(f);
@@ -838,16 +838,16 @@ export default function App() {
                                 onChange={(e) => {
                                   setFiches(prev => prev.map(prevF => {
                                     if (prevF._id === f._id) {
-                                      return { 
-                                        ...prevF, 
+                                      return {
+                                        ...prevF,
                                         description: e.target.value,
-                                        json_data: { 
-                                          ...prevF.json_data, 
-                                          formData: { 
-                                            ...(prevF.json_data?.formData || {}), 
-                                            nom_de_la_machine: e.target.value 
-                                          } 
-                                        } 
+                                        json_data: {
+                                          ...prevF.json_data,
+                                          formData: {
+                                            ...(prevF.json_data?.formData || {}),
+                                            nom_de_la_machine: e.target.value
+                                          }
+                                        }
                                       };
                                     }
                                     return prevF;
@@ -881,27 +881,27 @@ export default function App() {
                             </div>
                           </div>
 
-                          <button 
-                            disabled={!!generating} 
-                            onClick={(e) => { e.stopPropagation(); handleGenerate(f); }} 
+                          <button
+                            disabled={!!generating}
+                            onClick={(e) => { e.stopPropagation(); handleGenerate(f); }}
                             className={`btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shrink-0 transition-all duration-500 ${generating === f._id ? 'animate-pulse shadow-lg shadow-blue-500/20 scale-[0.98]' : 'shadow-lg shadow-blue-500/5'}`}
                           >
                             {generating === f._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
                             {generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}
                           </button>
-                          
-                          <button 
-                             className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ml-2 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
-                           >
-                             <ChevronRight className="w-5 h-5" />
-                           </button>
+
+                          <button
+                            className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ml-2 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
                         </div>
 
                         <AnimatePresence>
                           {isExpanded && (
-                            <motion.div 
-                              initial={{ height: 0, opacity: 0 }} 
-                              animate={{ height: 'auto', opacity: 1 }} 
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
                               exit={{ height: 0, opacity: 0 }}
                               className="overflow-hidden"
                             >
@@ -910,7 +910,7 @@ export default function App() {
                                   const rawNotes = f.json_data?.notes;
                                   const rawSource = f.json_data?.json_source;
                                   let sources: any[] = [];
-                                  
+
                                   if (Array.isArray(rawNotes)) {
                                     sources = rawNotes.map((n: any) => ({
                                       type: n.type === 'audio' ? 'audio' : n.type === 'photo' ? 'photo' : 'texte',
@@ -951,7 +951,7 @@ export default function App() {
                                       })));
                                     }
                                   }
-                                  
+
                                   if (sources.length === 0) {
                                     return <p className="text-xs text-slate-400 italic text-center py-4">Aucune donnée multimédia disponible.</p>;
                                   }
@@ -961,103 +961,103 @@ export default function App() {
                                     const isImage = ['photo', 'image'].includes(srcType.toLowerCase());
                                     const isAudio = srcType.toLowerCase() === 'audio';
                                     const isText = !isImage && !isAudio;
-  
+
                                     const srcDesc = typeof src?.description === 'string' ? src.description : '';
                                     const srcTrans = typeof src?.transcription === 'string' ? src.transcription : '';
-                                    const showDescription = isText && !!srcDesc && 
-                                                            srcDesc.toLowerCase() !== 'transcribed' && 
-                                                            srcDesc.trim() !== srcTrans.trim();
-  
-                                    return (
-                                    <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
-                                      {/* Header */}
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="slate">{src.type}</Badge>
-                                        <h4 className="text-xs font-black uppercase text-slate-800 truncate">{src.title}</h4>
-                                        <span className="text-[9px] font-bold text-slate-400 ml-auto shrink-0">{src.created_at ? new Date(src.created_at).toLocaleString('fr-CA') : ''}</span>
-                                      </div>
-                                      
-                                      <div className="flex flex-col md:flex-row gap-4 items-start">
-                                        {/* Media Column (Only for images) */}
-                                        {isImage && src.media_url && (
-                                          <button onClick={(e) => { e.stopPropagation(); setFullscreenImage(src.media_url!); }} title="Voir l'image en plein écran" className="w-full md:w-32 shrink-0 outline-none text-left">
-                                            <img src={src.media_url} alt={src.title} className="w-full h-24 object-cover rounded-[12px] border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in" />
-                                          </button>
-                                        )}
-  
-                                        {/* Content Column */}
-                                        <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
+                                    const showDescription = isText && !!srcDesc &&
+                                      srcDesc.toLowerCase() !== 'transcribed' &&
+                                      srcDesc.trim() !== srcTrans.trim();
 
-                                          {showDescription && (
-                                            <div className="flex flex-col gap-1">
-                                              <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
-                                              <textarea 
-                                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                                value={srcDesc}
-                                                onChange={(e) => {
-                                                  e.target.style.height = 'auto';
-                                                  e.target.style.height = e.target.scrollHeight + 'px';
-                                                  handleUpdateFicheDescription(f._id!, i, e.target.value);
-                                                }}
-                                                onKeyDown={async (e) => {
-                                                  if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    e.currentTarget.blur();
-                                                    try { 
-                                                      if (f.json_data?.sessionId) {
-                                                        await api.updateSessionData(f.json_data.sessionId, { 
-                                                          notes: f.json_data.notes,
-                                                          json_source: f.json_data.json_source
-                                                        }); 
-                                                      } else {
-                                                        await api.updateFiche(f._id!, f); 
-                                                      }
-                                                    } catch (err) { console.error("Failed", err); }
-                                                  }
-                                                }}
-                                                title="Appuyez sur Entrée pour sauvegarder"
-                                                className="text-[11px] text-slate-600 leading-relaxed font-medium w-full bg-slate-50/50 border border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-2 resize-none overflow-hidden transition-all outline-none"
-                                                rows={1}
-                                              />
-                                            </div>
+                                    return (
+                                      <div key={i} className="flex flex-col gap-3 p-4 bg-white/40 rounded-[16px] border border-white/60">
+                                        {/* Header */}
+                                        <div className="flex items-center gap-2">
+                                          <Badge variant="slate">{src.type}</Badge>
+                                          <h4 className="text-xs font-black uppercase text-slate-800 truncate">{src.title}</h4>
+                                          <span className="text-[9px] font-bold text-slate-400 ml-auto shrink-0">{src.created_at ? new Date(src.created_at).toLocaleString('fr-CA') : ''}</span>
+                                        </div>
+
+                                        <div className="flex flex-col md:flex-row gap-4 items-start">
+                                          {/* Media Column (Only for images) */}
+                                          {isImage && src.media_url && (
+                                            <button onClick={(e) => { e.stopPropagation(); setFullscreenImage(src.media_url!); }} title="Voir l'image en plein écran" className="w-full md:w-32 shrink-0 outline-none text-left">
+                                              <img src={src.media_url} alt={src.title} className="w-full h-24 object-cover rounded-[12px] border border-slate-200 hover:opacity-80 transition-opacity cursor-zoom-in" />
+                                            </button>
                                           )}
-  
-                                          {typeof srcTrans === 'string' && srcTrans !== '' && (
-                                            <div className="flex flex-col gap-1">
-                                              <span className="text-[9px] font-black uppercase text-slate-400">Transcription</span>
-                                              <textarea 
-                                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                                value={srcTrans}
-                                                onChange={(e) => {
-                                                  e.target.style.height = 'auto';
-                                                  e.target.style.height = e.target.scrollHeight + 'px';
-                                                  handleUpdateFicheTranscription(f._id!, i, e.target.value);
-                                                }}
-                                                onKeyDown={async (e) => {
-                                                  if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    e.currentTarget.blur();
-                                                    try { 
-                                                      if (f.json_data?.sessionId) {
-                                                        await api.updateSessionData(f.json_data.sessionId, { 
-                                                          notes: f.json_data.notes,
-                                                          json_source: f.json_data.json_source
-                                                        }); 
-                                                      } else {
-                                                        await api.updateFiche(f._id!, f); 
-                                                      }
-                                                    } catch (err) { console.error("Failed", err); }
-                                                  }
-                                                }}
-                                                title="Appuyez sur Entrée pour sauvegarder"
-                                                className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
-                                                rows={1}
-                                              />
-                                            </div>
-                                          )}
+
+                                          {/* Content Column */}
+                                          <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
+
+                                            {showDescription && (
+                                              <div className="flex flex-col gap-1">
+                                                <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
+                                                <textarea
+                                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                  value={srcDesc}
+                                                  onChange={(e) => {
+                                                    e.target.style.height = 'auto';
+                                                    e.target.style.height = e.target.scrollHeight + 'px';
+                                                    handleUpdateFicheDescription(f._id!, i, e.target.value);
+                                                  }}
+                                                  onKeyDown={async (e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                      e.preventDefault();
+                                                      e.currentTarget.blur();
+                                                      try {
+                                                        if (f.json_data?.sessionId) {
+                                                          await api.updateSessionData(f.json_data.sessionId, {
+                                                            notes: f.json_data.notes,
+                                                            json_source: f.json_data.json_source
+                                                          });
+                                                        } else {
+                                                          await api.updateFiche(f._id!, f);
+                                                        }
+                                                      } catch (err) { console.error("Failed", err); }
+                                                    }
+                                                  }}
+                                                  title="Appuyez sur Entrée pour sauvegarder"
+                                                  className="text-[11px] text-slate-600 leading-relaxed font-medium w-full bg-slate-50/50 border border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-2 resize-none overflow-hidden transition-all outline-none"
+                                                  rows={1}
+                                                />
+                                              </div>
+                                            )}
+
+                                            {typeof srcTrans === 'string' && srcTrans !== '' && (
+                                              <div className="flex flex-col gap-1">
+                                                <span className="text-[9px] font-black uppercase text-slate-400">Transcription</span>
+                                                <textarea
+                                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                  value={srcTrans}
+                                                  onChange={(e) => {
+                                                    e.target.style.height = 'auto';
+                                                    e.target.style.height = e.target.scrollHeight + 'px';
+                                                    handleUpdateFicheTranscription(f._id!, i, e.target.value);
+                                                  }}
+                                                  onKeyDown={async (e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                      e.preventDefault();
+                                                      e.currentTarget.blur();
+                                                      try {
+                                                        if (f.json_data?.sessionId) {
+                                                          await api.updateSessionData(f.json_data.sessionId, {
+                                                            notes: f.json_data.notes,
+                                                            json_source: f.json_data.json_source
+                                                          });
+                                                        } else {
+                                                          await api.updateFiche(f._id!, f);
+                                                        }
+                                                      } catch (err) { console.error("Failed", err); }
+                                                    }
+                                                  }}
+                                                  title="Appuyez sur Entrée pour sauvegarder"
+                                                  className="text-xs text-slate-700 leading-relaxed font-medium w-full bg-transparent border border-transparent focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-md p-1 -ml-1 resize-none overflow-hidden transition-all outline-none"
+                                                  rows={1}
+                                                />
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
                                     );
                                   });
                                 })()}
@@ -1075,58 +1075,58 @@ export default function App() {
             {activeTab === 'gammes' && (
               <div className="space-y-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/30">
-                   <div className="flex items-center gap-4 text-slate-400">
-                      <Archive className="w-8 h-8" />
-                      <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Gamme Générée <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
-                   </div>
-                   <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
-                      {/* Search Bar for Gammes */}
-                      <div className="relative w-full md:w-80 shrink-0">
-                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                          <Search className="w-4 h-4 text-slate-400" />
-                        </div>
-                        <input
-                          type="text"
-                          value={gammeSearch}
-                          onChange={(e) => setGammeSearch(e.target.value)}
-                          placeholder="Rechercher une gamme..."
-                          className="w-full pl-10 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
-                        />
-                        {gammeSearch && (
-                          <button
-                            onClick={() => setGammeSearch('')}
-                            className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                  <div className="flex items-center gap-4 text-slate-400">
+                    <Archive className="w-8 h-8" />
+                    <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Gamme Générée <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
+                  </div>
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
+                    {/* Search Bar for Gammes */}
+                    <div className="relative w-full md:w-80 shrink-0">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <Search className="w-4 h-4 text-slate-400" />
                       </div>
-                      
-                      <div className="flex gap-3">
-                         <button 
-                           onClick={handleDeleteGammes} 
-                           disabled={selectedGammes.length === 0}
-                           title={selectedGammes.length > 0 ? `Supprimer ${selectedGammes.length} gamme(s)` : "Supprimer"} 
-                           className={`w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center transition-all shadow-sm group ${selectedGammes.length === 0 ? 'bg-white/40 border-white/60 text-slate-400 cursor-not-allowed' : 'hover:bg-red-50 hover:text-red-500 cursor-pointer'}`}
-                         >
-                           <Trash className={`w-5 h-5 ${selectedGammes.length === 0 ? 'opacity-50' : 'opacity-40 group-hover:opacity-100'}`} />
-                         </button>
-                         <button 
-                           onClick={exportCSV} 
-                           disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html)}
-                           className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
-                         >
-                           <Download className="w-4 h-4" /> EXPORTER (CSV)
-                         </button>
-                         <button 
-                           onClick={exportHTML} 
-                           disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html)}
-                           className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
-                         >
-                           <Download className="w-4 h-4" /> EXPORTER (HTML)
-                         </button>
-                      </div>
-                   </div>
+                      <input
+                        type="text"
+                        value={gammeSearch}
+                        onChange={(e) => setGammeSearch(e.target.value)}
+                        placeholder="Rechercher une gamme..."
+                        className="w-full pl-10 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
+                      />
+                      {gammeSearch && (
+                        <button
+                          onClick={() => setGammeSearch('')}
+                          className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleDeleteGammes}
+                        disabled={selectedGammes.length === 0}
+                        title={selectedGammes.length > 0 ? `Supprimer ${selectedGammes.length} gamme(s)` : "Supprimer"}
+                        className={`w-12 h-12 glass-panel rounded-[18px] flex items-center justify-center transition-all shadow-sm group ${selectedGammes.length === 0 ? 'bg-white/40 border-white/60 text-slate-400 cursor-not-allowed' : 'hover:bg-red-50 hover:text-red-500 cursor-pointer'}`}
+                      >
+                        <Trash className={`w-5 h-5 ${selectedGammes.length === 0 ? 'opacity-50' : 'opacity-40 group-hover:opacity-100'}`} />
+                      </button>
+                      <button
+                        onClick={exportCSV}
+                        disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html)}
+                        className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
+                      >
+                        <Download className="w-4 h-4" /> EXPORTER (CSV)
+                      </button>
+                      <button
+                        onClick={exportHTML}
+                        disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html)}
+                        className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
+                      >
+                        <Download className="w-4 h-4" /> EXPORTER (HTML)
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-4">
@@ -1162,148 +1162,147 @@ export default function App() {
                     const isHtmlGamme = !!g.json_data.raw_html;
 
                     return (
-                      <div key={g._id} 
-                        className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${
-                          isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' : 
-                          isNewlyGenerated ? 'border-purple-400 ring-2 ring-purple-400/50 shadow-[0_0_30px_rgba(147,51,234,0.4),0_0_30px_rgba(59,130,246,0.4)] bg-gradient-to-r from-blue-50/50 to-purple-50/50' : 
-                          'border-white/80'
-                        }`}
+                      <div key={g._id}
+                        className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' :
+                          isNewlyGenerated ? 'border-purple-400 ring-2 ring-purple-400/50 shadow-[0_0_30px_rgba(147,51,234,0.4),0_0_30px_rgba(59,130,246,0.4)] bg-gradient-to-r from-blue-50/50 to-purple-50/50' :
+                            'border-white/80'
+                          }`}
                       >
                         <div className="flex items-center gap-8 cursor-pointer group" onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}>
-                           <div className="w-12 h-12 bg-slate-900 rounded-[18px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10 shrink-0">
-                             <Wrench className="w-6 h-6" />
-                           </div>
-                           
-                           <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                 <h3 className="text-lg font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
-                                 <Badge variant="indigo"><span className="flex items-center gap-1"><FileText className="w-3 h-3 opacity-80" /> {ficheName}</span></Badge>
-                                 <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
-                                 {authorName && <Badge variant="slate"><span className="flex items-center gap-1"><User className="w-3 h-3 opacity-80" /> {authorName}</span></Badge>}
-                              </div>
-                              {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
-                           </div>
+                          <div className="w-12 h-12 bg-slate-900 rounded-[18px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10 shrink-0">
+                            <Wrench className="w-6 h-6" />
+                          </div>
 
-                           <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
-                             <div className="flex flex-col items-center">
-                               <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{new Date(g.json_data.generated_at).toLocaleDateString('fr-CA')}</span>
-                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">GÉNÉRÉE LE</span>
-                             </div>
-                           </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h3 className="text-lg font-black tracking-tight uppercase leading-none truncate">{g.json_data.machine_number}</h3>
+                              <Badge variant="indigo"><span className="flex items-center gap-1"><FileText className="w-3 h-3 opacity-80" /> {ficheName}</span></Badge>
+                              <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
+                              {authorName && <Badge variant="slate"><span className="flex items-center gap-1"><User className="w-3 h-3 opacity-80" /> {authorName}</span></Badge>}
+                            </div>
+                            {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
+                          </div>
 
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); setExpandedGammes(prev => prev.includes(g._id!) ? prev.filter(x => x !== g._id!) : [...prev, g._id!]); }}
-                             className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
-                           >
-                             <ChevronRight className="w-5 h-5" />
-                           </button>
+                          <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] font-black text-slate-700 uppercase tracking-tighter">{new Date(g.json_data.generated_at).toLocaleDateString('fr-CA')}</span>
+                              <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">GÉNÉRÉE LE</span>
+                            </div>
+                          </div>
 
-                           <div className="w-12 h-12 shrink-0 flex items-center justify-center">
-                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 shadow-inner'}`}>
-                               {isSelected && <Check className="w-3 h-3" />}
-                             </div>
-                           </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setExpandedGammes(prev => prev.includes(g._id!) ? prev.filter(x => x !== g._id!) : [...prev, g._id!]); }}
+                            className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+
+                          <div className="w-12 h-12 shrink-0 flex items-center justify-center">
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 shadow-inner'}`}>
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </div>
+                          </div>
                         </div>
 
                         <AnimatePresence>
                           {isExpanded && (
-                            <motion.div 
-                              initial={{ height: 0, opacity: 0 }} 
-                              animate={{ height: 'auto', opacity: 1 }} 
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
                               exit={{ height: 0, opacity: 0 }}
                               className="overflow-hidden"
                             >
-                                <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
-                                  {isHtmlGamme ? (
-                                    <div className="w-full bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner relative group/iframe">
-                                      <iframe 
-                                        srcDoc={g.json_data.raw_html} 
-                                        title="HTML Preview" 
-                                        className="w-full h-[600px] border-none"
-                                        sandbox="allow-scripts"
-                                      />
-                                      <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase opacity-0 group-hover/iframe:opacity-100 transition-opacity pointer-events-none">
-                                        Prévisualisation HTML
-                                      </div>
+                              <div className="pt-6 mt-6 border-t border-slate-100 space-y-4">
+                                {isHtmlGamme ? (
+                                  <div className="w-full bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner relative group/iframe">
+                                    <iframe
+                                      srcDoc={g.json_data.raw_html}
+                                      title="HTML Preview"
+                                      className="w-full h-[600px] border-none"
+                                      sandbox="allow-scripts"
+                                    />
+                                    <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase opacity-0 group-hover/iframe:opacity-100 transition-opacity pointer-events-none">
+                                      Prévisualisation HTML
                                     </div>
-                                  ) : (
-                                    <>
-                                      {g.json_data.metadata && g.json_data.metadata.length > 0 && (
-                                        <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
-                                          {Array.isArray(g.json_data.metadata) && g.json_data.metadata.map((meta, mIdx) => (
-                                            <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
-                                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
-                                              <input
-                                                type="text"
-                                                value={meta.value}
-                                                onChange={(e) => handleUpdateMetadata(g._id!, mIdx, e.target.value)}
-                                                onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                                className="bg-transparent text-xs font-bold text-slate-700 outline-none focus:text-blue-600 border-b border-transparent focus:border-blue-200"
-                                              />
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      <div className="space-y-2">
-                                        {Array.isArray(g.json_data.steps) && g.json_data.steps.map((s, i) => (
-                                          <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
-                                            <div className="flex gap-3 items-start w-full">
-                                              <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
-                                              
-                                              <div className="flex-1 flex flex-col gap-2 min-w-0">
-                                                <textarea 
-                                                  rows={1}
-                                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                                  value={s?.description || ''} 
-                                                  onChange={(e) => {
-                                                    e.target.style.height = 'auto';
-                                                    e.target.style.height = e.target.scrollHeight + 'px';
-                                                    handleUpdateStep(g._id!, i, 'description', e.target.value);
-                                                  }} 
-                                                  onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                                  onKeyDown={async (e) => {
-                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                      e.preventDefault();
-                                                      try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
-                                                    }
-                                                  }}
-                                                  title="Appuyez sur Entrée pour sauvegarder"
-                                                  className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden" 
-                                                />
-                                                
-                                                {s.custom_fields && Array.isArray(s.custom_fields) && s.custom_fields.length > 0 && (
-                                                  <div className="flex flex-col gap-1.5 mt-1">
-                                                    {s.custom_fields.map((field, fIdx) => (
-                                                      <div key={fIdx} className="flex items-center gap-2">
-                                                        <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wider shrink-0 min-w-[60px]">
-                                                          {field.key}:
-                                                        </span>
-                                                        <input
-                                                            type="text"
-                                                            value={field.value}
-                                                            onChange={(e) => handleUpdateCustomField(g._id!, i, fIdx, e.target.value)}
-                                                            onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
-                                                            onKeyDown={async (e) => {
-                                                              if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
-                                                              }
-                                                            }}
-                                                            className="w-full bg-transparent text-[10px] text-slate-600 font-medium outline-none focus:text-blue-800 transition-colors"
-                                                        />
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {g.json_data.metadata && g.json_data.metadata.length > 0 && (
+                                      <div className="flex flex-wrap gap-4 p-4 bg-slate-50/50 rounded-2xl mb-4 border border-slate-100">
+                                        {Array.isArray(g.json_data.metadata) && g.json_data.metadata.map((meta, mIdx) => (
+                                          <div key={mIdx} className="flex flex-col gap-1 min-w-[150px]">
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{meta.key}</span>
+                                            <input
+                                              type="text"
+                                              value={meta.value}
+                                              onChange={(e) => handleUpdateMetadata(g._id!, mIdx, e.target.value)}
+                                              onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                              className="bg-transparent text-xs font-bold text-slate-700 outline-none focus:text-blue-600 border-b border-transparent focus:border-blue-200"
+                                            />
                                           </div>
                                         ))}
                                       </div>
-                                    </>
-                                  )}
-                                </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                      {Array.isArray(g.json_data.steps) && g.json_data.steps.map((s, i) => (
+                                        <div key={i} className="flex gap-3 p-3 bg-white/40 rounded-[16px] border border-white/60 group focus-within:bg-white/80 transition-all flex-col">
+                                          <div className="flex gap-3 items-start w-full">
+                                            <span className="font-black text-blue-600 text-[9px] mt-0.5 shrink-0 w-6">{s.op}</span>
+
+                                            <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                              <textarea
+                                                rows={1}
+                                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                                value={s?.description || ''}
+                                                onChange={(e) => {
+                                                  e.target.style.height = 'auto';
+                                                  e.target.style.height = e.target.scrollHeight + 'px';
+                                                  handleUpdateStep(g._id!, i, 'description', e.target.value);
+                                                }}
+                                                onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                onKeyDown={async (e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                  }
+                                                }}
+                                                title="Appuyez sur Entrée pour sauvegarder"
+                                                className="w-full bg-transparent text-[10px] font-black uppercase tracking-tight outline-none focus:text-blue-700 transition-colors resize-none leading-tight overflow-hidden"
+                                              />
+
+                                              {s.custom_fields && Array.isArray(s.custom_fields) && s.custom_fields.length > 0 && (
+                                                <div className="flex flex-col gap-1.5 mt-1">
+                                                  {s.custom_fields.map((field, fIdx) => (
+                                                    <div key={fIdx} className="flex items-center gap-2">
+                                                      <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wider shrink-0 min-w-[60px]">
+                                                        {field.key}:
+                                                      </span>
+                                                      <input
+                                                        type="text"
+                                                        value={field.value}
+                                                        onChange={(e) => handleUpdateCustomField(g._id!, i, fIdx, e.target.value)}
+                                                        onBlur={async () => { try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); } }}
+                                                        onKeyDown={async (e) => {
+                                                          if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            try { await api.updateGamme(g._id!, g); } catch (err) { console.error("Failed", err); }
+                                                          }
+                                                        }}
+                                                        className="w-full bg-transparent text-[10px] text-slate-600 font-medium outline-none focus:text-blue-800 transition-colors"
+                                                      />
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -1317,92 +1316,92 @@ export default function App() {
             {activeTab === 'settings' && (
               <div className="max-w-4xl mx-auto space-y-10">
                 <div className="glass-panel p-8 md:p-12 rounded-[40px] shadow-2xl">
-                   <div className="flex flex-col md:flex-row md:items-center gap-6 mb-10 justify-between">
-                      <div className="flex items-center gap-6">
-                        <div className="w-16 h-16 bg-blue-600 rounded-[24px] flex items-center justify-center text-white shadow-xl shadow-blue-500/20"><SettingsIcon className="w-8 h-8" /></div>
-                        <div>
-                          <h2 className="text-4xl font-black tracking-tighter uppercase">Configuration IA</h2>
-                          <p className="label-meta opacity-40">Définissez le comportement de l'expert en rédaction.</p>
-                        </div>
+                  <div className="flex flex-col md:flex-row md:items-center gap-6 mb-10 justify-between">
+                    <div className="flex items-center gap-6">
+                      <div className="w-16 h-16 bg-blue-600 rounded-[24px] flex items-center justify-center text-white shadow-xl shadow-blue-500/20"><SettingsIcon className="w-8 h-8" /></div>
+                      <div>
+                        <h2 className="text-4xl font-black tracking-tighter uppercase">Configuration IA</h2>
+                        <p className="label-meta opacity-40">Définissez le comportement de l'expert en rédaction.</p>
                       </div>
-                      
-                      {/* Simple version selector */}
-                      <div className="flex items-center gap-2 bg-white/40 p-2 rounded-[20px]">
-                        <select 
-                          className="bg-transparent text-[11px] font-black uppercase tracking-widest text-slate-700 outline-none cursor-pointer pl-3 pr-2"
-                          value={currentPrompt?._id || currentPrompt?.json_data.name || currentPrompt?.description || ''}
-                          onChange={(e) => {
-                            const selected = prompts.find(p => (p._id || p.json_data.name || p.description) === e.target.value);
-                            if (selected) setCurrentPrompt(selected);
-                          }}
-                        >
-                          {prompts.map(p => (
-                            <option key={p._id || p.json_data.name || p.description} value={p._id || p.json_data.name || p.description}>
-                              {p.json_data.name || p.description} {p.json_data.is_active ? '(Actif)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        <button onClick={handleCreatePrompt} className="w-8 h-8 bg-blue-600 text-white rounded-[12px] flex items-center justify-center hover:bg-blue-700 transition-colors shadow-md" title="Créer une nouvelle version">
-                          <Plus className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => {
-                          if (currentPrompt?._id) {
-                            handleDeletePrompt(currentPrompt._id);
-                          } else {
-                            const active = prompts.find(p => p.json_data.is_active) || prompts[0];
-                            if (active) setCurrentPrompt(active);
-                          }
-                        }} className="w-8 h-8 bg-red-50 text-red-600 rounded-[12px] flex items-center justify-center hover:bg-red-100 transition-colors shadow-sm ml-1" title={currentPrompt?._id ? "Supprimer la version" : "Annuler la création"}>
-                          <Trash className="w-4 h-4" />
-                        </button>
-                      </div>
-                   </div>
-                   
-                   <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-200 focus-within:border-blue-500 transition-colors pb-2">
-                      <input 
-                        type="text" 
-                        value={currentPrompt?.json_data.name || currentPrompt?.description || ''} 
-                        onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, name: e.target.value } } : null)}
-                        className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none text-slate-800 placeholder-slate-300 flex-1"
-                        placeholder="Nom de la version..."
-                      />
-                      
+                    </div>
+
+                    {/* Simple version selector */}
+                    <div className="flex items-center gap-2 bg-white/40 p-2 rounded-[20px]">
                       <select
-                        value={currentPrompt?.json_data.export_format || 'csv'}
-                        onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, export_format: e.target.value as 'csv' | 'html' } } : null)}
-                        className="bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-600 px-4 py-2 rounded-xl outline-none shrink-0 cursor-pointer border border-slate-200 hover:border-slate-300 transition-colors"
+                        className="bg-transparent text-[11px] font-black uppercase tracking-widest text-slate-700 outline-none cursor-pointer pl-3 pr-2"
+                        value={currentPrompt?._id || currentPrompt?.json_data.name || currentPrompt?.description || ''}
+                        onChange={(e) => {
+                          const selected = prompts.find(p => (p._id || p.json_data.name || p.description) === e.target.value);
+                          if (selected) setCurrentPrompt(selected);
+                        }}
                       >
-                        <option value="csv">FORMAT: CSV (STRUCTURED)</option>
-                        <option value="html">FORMAT: HTML (RAW)</option>
+                        {prompts.map(p => (
+                          <option key={p._id || p.json_data.name || p.description} value={p._id || p.json_data.name || p.description}>
+                            {p.json_data.name || p.description} {p.json_data.is_active ? '(Actif)' : ''}
+                          </option>
+                        ))}
                       </select>
+                      <button onClick={handleCreatePrompt} className="w-8 h-8 bg-blue-600 text-white rounded-[12px] flex items-center justify-center hover:bg-blue-700 transition-colors shadow-md" title="Créer une nouvelle version">
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => {
+                        if (currentPrompt?._id) {
+                          handleDeletePrompt(currentPrompt._id);
+                        } else {
+                          const active = prompts.find(p => p.json_data.is_active) || prompts[0];
+                          if (active) setCurrentPrompt(active);
+                        }
+                      }} className="w-8 h-8 bg-red-50 text-red-600 rounded-[12px] flex items-center justify-center hover:bg-red-100 transition-colors shadow-sm ml-1" title={currentPrompt?._id ? "Supprimer la version" : "Annuler la création"}>
+                        <Trash className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
 
-                      {currentPrompt?.json_data.is_active ? (
-                        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-full border border-emerald-200 shadow-sm shrink-0">
-                           <div className="relative">
-                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                             <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-30" />
-                           </div>
-                           <span className="text-[11px] font-black uppercase tracking-widest">Version Active</span>
+                  <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-200 focus-within:border-blue-500 transition-colors pb-2">
+                    <input
+                      type="text"
+                      value={currentPrompt?.json_data.name || currentPrompt?.description || ''}
+                      onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, name: e.target.value } } : null)}
+                      className="bg-transparent text-xl font-black uppercase tracking-tighter w-full outline-none text-slate-800 placeholder-slate-300 flex-1"
+                      placeholder="Nom de la version..."
+                    />
+
+                    <select
+                      value={currentPrompt?.json_data.export_format || 'csv'}
+                      onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, export_format: e.target.value as 'csv' | 'html' } } : null)}
+                      className="bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-600 px-4 py-2 rounded-xl outline-none shrink-0 cursor-pointer border border-slate-200 hover:border-slate-300 transition-colors"
+                    >
+                      <option value="csv">FORMAT: CSV (STRUCTURED)</option>
+                      <option value="html">FORMAT: HTML (RAW)</option>
+                    </select>
+
+                    {currentPrompt?.json_data.is_active ? (
+                      <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-full border border-emerald-200 shadow-sm shrink-0">
+                        <div className="relative">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-30" />
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2 bg-slate-100 text-slate-500 px-4 py-2 rounded-full border border-slate-200 shrink-0">
-                           <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                           <span className="text-[11px] font-black uppercase tracking-widest">Inactive</span>
-                        </div>
-                      )}
-                   </div>
+                        <span className="text-[11px] font-black uppercase tracking-widest">Version Active</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-slate-100 text-slate-500 px-4 py-2 rounded-full border border-slate-200 shrink-0">
+                        <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                        <span className="text-[11px] font-black uppercase tracking-widest">Inactive</span>
+                      </div>
+                    )}
+                  </div>
 
-                   <div className="relative">
-                      <textarea value={currentPrompt?.json_data.content || ''} onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, content: e.target.value } } : null)}
-                        className="w-full h-[300px] md:h-[400px] bg-white/40 border-2 border-white/60 rounded-[32px] p-8 font-mono text-[11px] leading-relaxed focus:bg-white/60 outline-none transition-all shadow-inner custom-scrollbar"
-                      />
-                      <div className="absolute top-6 right-6 px-3 py-1 bg-slate-900/5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 pointer-events-none">Expert Markdown Engine</div>
-                   </div>
+                  <div className="relative">
+                    <textarea value={currentPrompt?.json_data.content || ''} onChange={(e) => setCurrentPrompt(p => p ? { ...p, json_data: { ...p.json_data, content: e.target.value } } : null)}
+                      className="w-full h-[300px] md:h-[400px] bg-white/40 border-2 border-white/60 rounded-[32px] p-8 font-mono text-[11px] leading-relaxed focus:bg-white/60 outline-none transition-all shadow-inner custom-scrollbar"
+                    />
+                    <div className="absolute top-6 right-6 px-3 py-1 bg-slate-900/5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 pointer-events-none">Expert Markdown Engine</div>
+                  </div>
 
-                   <button onClick={async () => handleSavePrompt(true)} className={`btn-primary w-full mt-8 h-16 rounded-[24px] flex items-center justify-center gap-4 text-sm ${currentPrompt?.json_data.is_active ? 'bg-emerald-600 shadow-emerald-500/10' : ''}`}>
-                     <Save className="w-7 h-7" /> 
-                     {currentPrompt?.json_data.is_active ? 'METTRE À JOUR LA VERSION ACTIVE' : 'SAUVEGARDER ET ACTIVER'}
-                   </button>
+                  <button onClick={async () => handleSavePrompt(true)} className={`btn-primary w-full mt-8 h-16 rounded-[24px] flex items-center justify-center gap-4 text-sm ${currentPrompt?.json_data.is_active ? 'bg-emerald-600 shadow-emerald-500/10' : ''}`}>
+                    <Save className="w-7 h-7" />
+                    {currentPrompt?.json_data.is_active ? 'METTRE À JOUR LA VERSION ACTIVE' : 'SAUVEGARDER ET ACTIVER'}
+                  </button>
                 </div>
               </div>
             )}
@@ -1416,20 +1415,20 @@ export default function App() {
       {/* Fullscreen Image Modal */}
       <AnimatePresence>
         {fullscreenImage && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setFullscreenImage(null)}
             className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-8 cursor-zoom-out"
           >
-            <motion.img 
+            <motion.img
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
-              src={fullscreenImage} 
-              alt="Plein écran" 
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" 
+              src={fullscreenImage}
+              alt="Plein écran"
+              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
             />
           </motion.div>
         )}

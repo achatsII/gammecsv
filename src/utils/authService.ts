@@ -189,6 +189,13 @@ export const checkAndProactiveRefresh = async (): Promise<boolean> => {
     }
 };
 
+export const logout = (): void => {
+    authStore.clear();
+    const authPortalBase = API_BASE_URL.replace('gateway.', 'auth.gateway.');
+    const redirectUri = encodeURIComponent(window.location.origin);
+    window.location.href = `${authPortalBase}/logout?redirect_uri=${redirectUri}`;
+};
+
 export const fetchUserProfile = async (): Promise<void> => {
     try {
         const token = authStore.getAccess();
