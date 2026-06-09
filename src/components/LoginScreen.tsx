@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
-import { Activity, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { initiateLogin } from '../utils/authService';
+
+const GammeIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg className={className} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="10" height="10" rx="2.5" fill="white" fillOpacity="0.9"/>
+        <rect x="16" y="2" width="22" height="10" rx="2.5" fill="white" fillOpacity="0.9"/>
+        <rect x="2" y="16" width="10" height="22" rx="2.5" fill="white" fillOpacity="0.9"/>
+        <rect x="16" y="16" width="22" height="22" rx="2.5" fill="white" fillOpacity="0.9"/>
+    </svg>
+);
 
 export const LoginScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -22,14 +31,14 @@ export const LoginScreen: React.FC = () => {
 
             <div className="glass-panel p-12 rounded-[40px] shadow-2xl max-w-md w-full relative z-10 flex flex-col items-center text-center">
                 <div className="w-20 h-20 bg-blue-600 rounded-[28px] flex items-center justify-center text-white shadow-xl shadow-blue-500/20 mb-8">
-                    <Activity className="w-10 h-10" />
+                    <GammeIcon className="w-10 h-10" />
                 </div>
-                
-                <h1 className="text-3xl font-black tracking-tighter uppercase mb-2">Industrial AI <span className="text-blue-600">Gams</span></h1>
+
+                <h1 className="text-3xl font-black tracking-tighter uppercase mb-2"><span className="text-blue-600">Gamme</span></h1>
                 <p className="label-meta opacity-50 mb-12">Connectez-vous pour accéder à votre espace de travail intelligent.</p>
-                
-                <button 
-                    onClick={handleLogin} 
+
+                <button
+                    onClick={handleLogin}
                     disabled={isLoading}
                     className="btn-primary w-full h-16 rounded-[24px] text-sm font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-xl shadow-blue-500/10"
                 >
