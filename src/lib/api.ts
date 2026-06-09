@@ -255,8 +255,7 @@ export const api = {
     });
     
     const data = await res.json();
-    console.log("AskAI raw response:", data);
-    
+
     if (format === 'html') {
       let htmlText = data.results?.assistant_response
         || data.assistant_response
