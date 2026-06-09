@@ -173,6 +173,38 @@ const MOCK_GAMMES: Gamme[] = [
 
 // --- Utilities ---
 
+const getFicheTitle = (f: Fiche | undefined): string => {
+  if (!f) return '';
+  
+  // 1. Highest priority: Explicitly edited title 'nomFiche'
+  if (f.json_data?.formData?.nomFiche && f.json_data.formData.nomFiche.trim() !== '') {
+    return f.json_data.formData.nomFiche.trim();
+  }
+
+  // 2. Secondary standard fields (from older forms)
+  let title = f.json_data?.formData?.nom_de_la_machine || f.json_data?.name || '';
+  if (title && !title.startsWith('Fiche pour session') && title !== 'ID INCONNU') {
+    return title.trim();
+  }
+
+  // 3. Fallback: First valid string variable (not author, not too long)
+  if (f.json_data?.formData && typeof f.json_data.formData === 'object') {
+    for (const [key, value] of Object.entries(f.json_data.formData)) {
+      if (key !== 'author' && key !== 'nomFiche' && typeof value === 'string' && value.trim() !== '') {
+        const valTrimmed = value.trim();
+        // Ignore if it's longer than 25 characters (likely an audio transcription)
+        if (valTrimmed.length <= 25) {
+          // Keep the old prefix behavior for numero_maximo if it happens to be the first variable
+          return key === 'numero_maximo' ? `Fiche ${valTrimmed}` : valTrimmed;
+        }
+      }
+    }
+  }
+
+  // 4. Default
+  return 'Fiche Sans Nom';
+};
+
 const Badge = ({ children, variant = 'blue' }: { children: React.ReactNode, variant?: 'blue' | 'green' | 'amber' | 'slate' | 'emerald' | 'indigo' | 'purple' }) => {
   const styles: Record<string, string> = {
     blue: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
@@ -217,20 +249,43 @@ export default function App() {
     const maximo = f.json_data?.formData?.numero_maximo || '';
     const desc = f.description || '';
     const author = f.json_data?.author?.fullname || '';
-    const name = f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || '';
+    const name = getFicheTitle(f);
     
     if (name.toLowerCase().includes(searchLower)) return true;
     if (maximo.toLowerCase().includes(searchLower)) return true;
     if (desc.toLowerCase().includes(searchLower)) return true;
     if (author.toLowerCase().includes(searchLower)) return true;
     
-    if (f.json_data?.json_source) {
-      for (const src of f.json_data.json_source) {
+    const rawNotes = f.json_data?.notes;
+    if (Array.isArray(rawNotes)) {
+      for (const n of rawNotes) {
+        if (n.text?.toLowerCase().includes(searchLower)) return true;
+        if (n.transcription?.toLowerCase().includes(searchLower)) return true;
+        if (n.aiAnalysis?.toLowerCase().includes(searchLower)) return true;
+      }
+    }
+
+    const rawSource = f.json_data?.json_source;
+    if (Array.isArray(rawSource)) {
+      for (const src of rawSource) {
         if (src.title?.toLowerCase().includes(searchLower)) return true;
         if (src.transcription?.toLowerCase().includes(searchLower)) return true;
       }
+    } else if (rawSource && typeof rawSource === 'object') {
+      const audios = Array.isArray(rawSource.audioTranscriptions) ? rawSource.audioTranscriptions : [];
+      const texts = Array.isArray(rawSource.textNotes) ? rawSource.textNotes : [];
+      const images = Array.isArray(rawSource.imageDescriptions) ? rawSource.imageDescriptions : [];
+      for (const a of audios) {
+        if (a.transcription?.toLowerCase().includes(searchLower)) return true;
+      }
+      for (const t of texts) {
+        if (t.text?.toLowerCase().includes(searchLower)) return true;
+      }
+      for (const i of images) {
+        if (i.description?.toLowerCase().includes(searchLower)) return true;
+      }
     }
-    
+
     return false;
   });
 
@@ -242,7 +297,7 @@ export default function App() {
     const desc = g.description || '';
     
     const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
-    const ficheName = sourceFiche ? (sourceFiche.json_data?.name || sourceFiche.json_data?.formData?.nomFiche || sourceFiche.app_identifier || '') : '';
+    const ficheName = sourceFiche ? getFicheTitle(sourceFiche) : '';
     
     if (ficheName.toLowerCase().includes(searchLower)) return true;
     if (machine.toLowerCase().includes(searchLower)) return true;
@@ -591,7 +646,7 @@ export default function App() {
       });
     });
     
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -778,17 +833,7 @@ export default function App() {
                               <input 
                                 className="text-xl font-black tracking-tight uppercase leading-none truncate bg-transparent border-none outline-none w-full placeholder-slate-300"
                                 value={(() => {
-                                  let title = f.json_data?.formData?.nom_de_la_machine || f.json_data?.name || f.json_data?.formData?.nomFiche || f.app_identifier || 'ID INCONNU';
-                                  if (title.startsWith('Fiche pour session') || f.app_identifier === title || title === 'ID INCONNU') {
-                                    if (f.json_data?.formData?.nom_de_la_machine) {
-                                      title = f.json_data.formData.nom_de_la_machine;
-                                    } else if (f.json_data?.formData?.numero_maximo) {
-                                      title = `Fiche ${f.json_data.formData.numero_maximo}`;
-                                    } else {
-                                      title = 'Fiche Sans Nom';
-                                    }
-                                  }
-                                  return title;
+                                  return getFicheTitle(f);
                                 })()}
                                 onChange={(e) => {
                                   setFiches(prev => prev.map(prevF => {
@@ -942,11 +987,7 @@ export default function App() {
   
                                         {/* Content Column */}
                                         <div className="flex-1 min-w-0 w-full flex flex-col gap-2">
-                                          {/* Audio Player */}
-                                          {isAudio && src.media_url && (
-                                            <audio controls src={src.media_url} className="w-full h-10 outline-none" />
-                                          )}
-  
+
                                           {showDescription && (
                                             <div className="flex flex-col gap-1">
                                               <span className="text-[9px] font-black uppercase text-slate-400">Description</span>
@@ -1105,10 +1146,7 @@ export default function App() {
                     const gAny = g as any;
                     let authorName = gAny['user-email'] || gAny.user_email || g.json_data?.['user-email'] || (g.json_data as any)?.user_email || '';
                     if (sourceFiche) {
-                      ficheName = sourceFiche.json_data?.name || sourceFiche.json_data?.formData?.nomFiche || sourceFiche.app_identifier || 'INCONNU';
-                      if (ficheName.startsWith('Fiche pour session')) {
-                        ficheName = sourceFiche.json_data?.formData?.numero_maximo ? `Fiche ${sourceFiche.json_data.formData.numero_maximo}` : 'Fiche Sans Nom';
-                      }
+                      ficheName = getFicheTitle(sourceFiche);
                       if (!authorName) {
                         const sfAny = sourceFiche as any;
                         authorName = sourceFiche.json_data?.auteur?.nom || sfAny['user-email'] || sfAny.user_email || '';
@@ -1182,7 +1220,7 @@ export default function App() {
                                         srcDoc={g.json_data.raw_html} 
                                         title="HTML Preview" 
                                         className="w-full h-[600px] border-none"
-                                        sandbox="allow-same-origin allow-scripts"
+                                        sandbox="allow-scripts"
                                       />
                                       <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase opacity-0 group-hover/iframe:opacity-100 transition-opacity pointer-events-none">
                                         Prévisualisation HTML
