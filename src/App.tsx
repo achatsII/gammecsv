@@ -241,8 +241,39 @@ export default function App() {
   const [newlyGeneratedTime, setNewlyGeneratedTime] = useState<string | null>(null);
   const [ficheSearch, setFicheSearch] = useState('');
   const [gammeSearch, setGammeSearch] = useState('');
+  const [authorFilter, setAuthorFilter] = useState('');
+  const [authorDropdownOpen, setAuthorDropdownOpen] = useState(false);
+  const [gammeAuthorFilter, setGammeAuthorFilter] = useState('');
+  const [gammeAuthorDropdownOpen, setGammeAuthorDropdownOpen] = useState(false);
+
+  const getGammeAuthor = (g: Gamme): string => {
+    const gAny = g as any;
+    let authorName = gAny['user-email'] || gAny.user_email || (g.json_data as any)?.['user-email'] || (g.json_data as any)?.user_email || '';
+    if (!authorName) {
+      const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
+      if (sourceFiche) {
+        const sfAny = sourceFiche as any;
+        authorName = sourceFiche.json_data?.author?.fullname || sourceFiche.json_data?.auteur?.nom || sfAny['user-email'] || sfAny.user_email || '';
+      }
+    }
+    if (authorName.includes('@')) authorName = authorName.split('@')[0].toUpperCase();
+    return authorName;
+  };
+
+  const gammeAuthors = Array.from(new Set(
+    gammes.map(getGammeAuthor).filter((a): a is string => !!a && a.trim() !== '')
+  )).sort((a, b) => a.localeCompare(b));
+
+  const ficheAuthors = Array.from(new Set(
+    fiches
+      .map(f => f.json_data?.author?.fullname)
+      .filter((a): a is string => !!a && a.trim() !== '')
+  )).sort((a, b) => a.localeCompare(b));
 
   const filteredFiches = fiches.filter(f => {
+    // Author filter
+    if (authorFilter && (f.json_data?.author?.fullname || '') !== authorFilter) return false;
+
     if (!ficheSearch) return true;
     const searchLower = ficheSearch.toLowerCase();
 
@@ -290,6 +321,9 @@ export default function App() {
   });
 
   const filteredGammes = gammes.filter(g => {
+    // Author filter
+    if (gammeAuthorFilter && getGammeAuthor(g) !== gammeAuthorFilter) return false;
+
     if (!gammeSearch) return true;
     const searchLower = gammeSearch.toLowerCase();
 
@@ -733,13 +767,13 @@ export default function App() {
       <div className="bg-scene"><div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" /><div className="absolute inset-0 backdrop-blur-[80px]" /></div>
       <div className="grain" />
 
-      <header className="fixed top-0 inset-x-0 h-20 glass-panel z-50 flex items-center px-10 justify-between">
+      <header className="fixed top-0 inset-x-0 h-20 glass-panel z-50 flex items-center px-5 md:px-10 justify-between">
         <div className="flex items-center gap-3">
-          <Table2 className="w-8 h-8 text-blue-600" />
+          <Table2 className="w-8 h-8 text-blue-600 shrink-0" />
           <h1 className="text-xl font-black tracking-tighter uppercase"><span className="text-blue-600">Gamme</span></h1>
         </div>
 
-        <nav className="flex gap-1 bg-white/40 p-1.5 rounded-[20px]">
+        <nav className="hidden md:flex gap-1 bg-white/40 p-1.5 rounded-[20px]">
           {['fiches', 'gammes', 'settings'].map(t => (
             <button key={t} onClick={() => {
               setActiveTab(t as any);
@@ -754,7 +788,7 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
           <button
             onClick={refresh}
             disabled={loading}
@@ -774,7 +808,28 @@ export default function App() {
         </div>
       </header>
 
-      <main className="pt-32 px-10 pb-20 max-w-7xl mx-auto">
+      {/* Mobile bottom navigation */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 h-[72px] glass-panel border-t border-white/50 z-50 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)]">
+        {([
+          { id: 'fiches', label: 'Fiches', Icon: FileText },
+          { id: 'gammes', label: 'Gammes', Icon: Archive },
+          { id: 'settings', label: 'Config', Icon: Settings },
+        ] as const).map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => {
+              setActiveTab(id as any);
+              if (id !== 'gammes') setExpandedGammes([]);
+            }}
+            className={`flex flex-col items-center justify-center gap-1 flex-1 h-full rounded-2xl transition-all ${activeTab === id ? 'text-blue-600' : 'text-slate-400'}`}
+          >
+            <Icon className={`w-6 h-6 transition-transform ${activeTab === id ? 'scale-110' : ''}`} />
+            <span className="text-[10px] font-black uppercase tracking-wider">{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <main className="pt-28 md:pt-32 px-4 md:px-10 pb-28 md:pb-20 max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
 
@@ -786,26 +841,63 @@ export default function App() {
                     <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
                   </div>
 
-                  {/* Search Bar for Fiches */}
-                  <div className="relative w-full md:max-w-md shrink-0">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <Search className="w-5 h-5 text-slate-400" />
-                    </div>
-                    <input
-                      type="text"
-                      value={ficheSearch}
-                      onChange={(e) => setFicheSearch(e.target.value)}
-                      placeholder="Rechercher une fiche (n° maximo, description...)"
-                      className="w-full pl-12 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
-                    />
-                    {ficheSearch && (
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto lg:mr-24 xl:mr-40">
+                    {/* Author Filter */}
+                    <div className="relative w-full sm:w-56 shrink-0">
                       <button
-                        onClick={() => setFicheSearch('')}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
+                        onClick={() => setAuthorDropdownOpen(o => !o)}
+                        className={`w-full flex items-center gap-2 pl-4 pr-3 py-3 border rounded-[18px] text-xs font-semibold outline-none transition-all shadow-sm ${authorFilter ? 'bg-blue-500/10 border-blue-500/30 text-blue-700' : 'bg-white/40 border-white/60 hover:bg-white/60 text-slate-800'}`}
                       >
-                        <X className="w-4 h-4" />
+                        <User className={`w-4 h-4 shrink-0 ${authorFilter ? 'text-blue-500' : 'text-slate-400'}`} />
+                        <span className="truncate flex-1 text-left">{authorFilter || 'Tous les auteurs'}</span>
+                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${authorDropdownOpen ? 'rotate-90' : ''} ${authorFilter ? 'text-blue-400' : 'text-slate-400'}`} />
                       </button>
-                    )}
+                      {authorDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setAuthorDropdownOpen(false)} />
+                          <div className="absolute top-full mt-2 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border border-slate-100 rounded-[18px] shadow-xl shadow-slate-900/10 p-2 max-h-72 overflow-y-auto">
+                            <button
+                              onClick={() => { setAuthorFilter(''); setAuthorDropdownOpen(false); }}
+                              className={`w-full text-left px-3 py-2.5 rounded-[12px] text-xs font-bold transition-all ${!authorFilter ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                              Tous les auteurs
+                            </button>
+                            {ficheAuthors.map(a => (
+                              <button
+                                key={a}
+                                onClick={() => { setAuthorFilter(a); setAuthorDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2.5 rounded-[12px] text-xs font-bold transition-all truncate ${authorFilter === a ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                title={a}
+                              >
+                                {a}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Search Bar for Fiches */}
+                    <div className="relative w-full md:max-w-md shrink-0">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <Search className="w-5 h-5 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        value={ficheSearch}
+                        onChange={(e) => setFicheSearch(e.target.value)}
+                        placeholder="Rechercher une fiche (n° maximo, description...)"
+                        className="w-full pl-12 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
+                      />
+                      {ficheSearch && (
+                        <button
+                          onClick={() => setFicheSearch('')}
+                          className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-650"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -819,11 +911,12 @@ export default function App() {
                   )}
                   {filteredFiches.map(f => {
                     const isExpanded = expandedFiches.includes(f._id);
+                    const hasGamme = gammes.some(g => g.json_data?.fiche_id === f._id);
                     return (
                       <div key={f._id}
                         className="glass-card p-6 rounded-[28px] group transition-all border-2 border-white/80 hover:border-blue-200"
                       >
-                        <div className="flex items-center gap-8 cursor-pointer" onClick={() => setExpandedFiches(prev => prev.includes(f._id) ? prev.filter(x => x !== f._id) : [...prev, f._id])}>
+                        <div className="flex items-center gap-3 md:gap-8 cursor-pointer" onClick={() => setExpandedFiches(prev => prev.includes(f._id) ? prev.filter(x => x !== f._id) : [...prev, f._id])}>
                           <div className="w-12 h-12 bg-blue-500/10 rounded-[18px] flex items-center justify-center text-blue-600 shrink-0">
                             <FileText className="w-6 h-6" />
                           </div>
@@ -868,10 +961,21 @@ export default function App() {
                                 title="Appuyez sur Entrée pour sauvegarder"
                               />
                             </div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              {hasGamme ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600/80">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Gamme générée
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Pas encore générée
+                                </span>
+                              )}
+                            </div>
                             {(!f.description || f.description.startsWith('Fiche pour session')) ? null : (
                               <p className="text-[11px] font-bold text-slate-500 line-clamp-1 opacity-70 italic">"{f.description}"</p>
                             )}
-                            {f._id && <span className="text-[8px] font-mono text-slate-400 mt-1 block">ID: {f._id}</span>}
+                            {f._id && <span className="text-[8px] font-mono text-slate-400 mt-1 block truncate">ID: {f._id}</span>}
                           </div>
 
                           <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
@@ -884,14 +988,14 @@ export default function App() {
                           <button
                             disabled={!!generating}
                             onClick={(e) => { e.stopPropagation(); handleGenerate(f); }}
-                            className={`btn-primary w-40 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shrink-0 transition-all duration-500 ${generating === f._id ? 'animate-pulse shadow-lg shadow-blue-500/20 scale-[0.98]' : 'shadow-lg shadow-blue-500/5'}`}
+                            className={`btn-primary w-12 px-0 md:w-40 md:px-6 h-12 rounded-[18px] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 group/btn shrink-0 transition-all duration-500 ${generating === f._id ? 'animate-pulse shadow-lg shadow-blue-500/20 scale-[0.98]' : 'shadow-lg shadow-blue-500/5'}`}
                           >
                             {generating === f._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
-                            {generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}
+                            <span className="hidden md:inline">{generating === f._id ? 'ANALYSE...' : 'GÉNÉRER'}</span>
                           </button>
 
                           <button
-                            className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 ml-2 ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
+                            className={`w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-all shrink-0 hidden sm:flex ${isExpanded ? 'bg-blue-50 text-blue-600 rotate-90' : ''}`}
                           >
                             <ChevronRight className="w-5 h-5" />
                           </button>
@@ -1080,6 +1184,41 @@ export default function App() {
                     <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-3">Gamme Générée <span className="text-lg text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-[12px] relative top-0.5">{gammes.length}</span></h2>
                   </div>
                   <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 w-full md:w-auto">
+                    {/* Author Filter for Gammes */}
+                    <div className="relative w-full md:w-56 shrink-0">
+                      <button
+                        onClick={() => setGammeAuthorDropdownOpen(o => !o)}
+                        className={`w-full flex items-center gap-2 pl-4 pr-3 py-3 border rounded-[18px] text-xs font-semibold outline-none transition-all shadow-sm ${gammeAuthorFilter ? 'bg-blue-500/10 border-blue-500/30 text-blue-700' : 'bg-white/40 border-white/60 hover:bg-white/60 text-slate-800'}`}
+                      >
+                        <User className={`w-4 h-4 shrink-0 ${gammeAuthorFilter ? 'text-blue-500' : 'text-slate-400'}`} />
+                        <span className="truncate flex-1 text-left">{gammeAuthorFilter || 'Tous les auteurs'}</span>
+                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${gammeAuthorDropdownOpen ? 'rotate-90' : ''} ${gammeAuthorFilter ? 'text-blue-400' : 'text-slate-400'}`} />
+                      </button>
+                      {gammeAuthorDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setGammeAuthorDropdownOpen(false)} />
+                          <div className="absolute top-full mt-2 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border border-slate-100 rounded-[18px] shadow-xl shadow-slate-900/10 p-2 max-h-72 overflow-y-auto">
+                            <button
+                              onClick={() => { setGammeAuthorFilter(''); setGammeAuthorDropdownOpen(false); }}
+                              className={`w-full text-left px-3 py-2.5 rounded-[12px] text-xs font-bold transition-all ${!gammeAuthorFilter ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                              Tous les auteurs
+                            </button>
+                            {gammeAuthors.map(a => (
+                              <button
+                                key={a}
+                                onClick={() => { setGammeAuthorFilter(a); setGammeAuthorDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2.5 rounded-[12px] text-xs font-bold transition-all truncate ${gammeAuthorFilter === a ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                title={a}
+                              >
+                                {a}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
                     {/* Search Bar for Gammes */}
                     <div className="relative w-full md:w-80 shrink-0">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -1114,16 +1253,16 @@ export default function App() {
                       <button
                         onClick={exportCSV}
                         disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html)}
-                        className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
+                        className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-3 md:px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => !g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'btn-primary cursor-pointer'}`}
                       >
-                        <Download className="w-4 h-4" /> EXPORTER (CSV)
+                        <Download className="w-4 h-4 shrink-0" /> <span className="whitespace-nowrap">CSV</span><span className="hidden md:inline whitespace-nowrap">&nbsp;EXPORT</span>
                       </button>
                       <button
                         onClick={exportHTML}
                         disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html)}
-                        className={`flex items-center justify-center gap-2 px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
+                        className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-3 md:px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
                       >
-                        <Download className="w-4 h-4" /> EXPORTER (HTML)
+                        <Download className="w-4 h-4 shrink-0" /> <span className="whitespace-nowrap">HTML</span><span className="hidden md:inline whitespace-nowrap">&nbsp;EXPORT</span>
                       </button>
                     </div>
                   </div>
@@ -1142,19 +1281,8 @@ export default function App() {
                     const isExpanded = expandedGammes.includes(g._id!);
                     const isNewlyGenerated = g.json_data.generated_at === newlyGeneratedTime;
                     const sourceFiche = fiches.find(f => f._id === g.json_data.fiche_id);
-                    let ficheName = 'INCONNU';
-                    const gAny = g as any;
-                    let authorName = gAny['user-email'] || gAny.user_email || g.json_data?.['user-email'] || (g.json_data as any)?.user_email || '';
-                    if (sourceFiche) {
-                      ficheName = getFicheTitle(sourceFiche);
-                      if (!authorName) {
-                        const sfAny = sourceFiche as any;
-                        authorName = sourceFiche.json_data?.auteur?.nom || sfAny['user-email'] || sfAny.user_email || '';
-                      }
-                    }
-                    if (authorName.includes('@')) {
-                      authorName = authorName.split('@')[0].toUpperCase();
-                    }
+                    let ficheName = sourceFiche ? getFicheTitle(sourceFiche) : 'INCONNU';
+                    const authorName = getGammeAuthor(g);
                     if (ficheName.length > 25) ficheName = ficheName.substring(0, 25) + '...';
 
                     const sourcePrompt = prompts.find(p => p._id === g.json_data.prompt_id);
@@ -1168,7 +1296,7 @@ export default function App() {
                             'border-white/80'
                           }`}
                       >
-                        <div className="flex items-center gap-8 cursor-pointer group" onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}>
+                        <div className="flex items-center gap-3 md:gap-8 cursor-pointer group" onClick={() => setSelectedGammes(p => p.includes(g._id!) ? p.filter(x => x !== g._id) : [...p, g._id!])}>
                           <div className="w-12 h-12 bg-slate-900 rounded-[18px] flex items-center justify-center text-white shadow-lg shadow-slate-900/10 shrink-0">
                             <Wrench className="w-6 h-6" />
                           </div>
@@ -1180,7 +1308,7 @@ export default function App() {
                               <Badge variant="purple"><span className="flex items-center gap-1"><SettingsIcon className="w-3 h-3 opacity-80" /> {promptName}</span></Badge>
                               {authorName && <Badge variant="slate"><span className="flex items-center gap-1"><User className="w-3 h-3 opacity-80" /> {authorName}</span></Badge>}
                             </div>
-                            {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block">ID: {g._id}</span>}
+                            {g._id && <span className="text-[10px] font-mono text-slate-400 mt-1 block truncate">ID: {g._id}</span>}
                           </div>
 
                           <div className="flex items-center gap-8 px-8 border-x border-slate-100/50 hidden md:flex">
