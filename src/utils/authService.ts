@@ -210,9 +210,18 @@ export const fetchUserProfile = async (): Promise<void> => {
         if (response.ok) {
             const data = await response.json();
             if (data.success && data.results) {
+                const applications: any[] = data.results.applications || [];
+                const gammeApp = applications.find((app: any) =>
+                    app.name === 'GammeCsv' || app.url?.includes('gamme')
+                );
+                const appRole = gammeApp?.roles?.[0] || 'user';
+                const orgRole = data.results.organization?.role || 'user';
+                const role = appRole === 'admin' || orgRole === 'admin' ? 'admin' : 'user';
+
                 authStore.setUser({
-                    name: data.results.profile?.fullname || "User",
-                    email: data.results.email
+                    name: data.results.profile?.fullname || data.results.profile?.email || "User",
+                    email: data.results.profile?.email,
+                    role
                 });
             }
         }

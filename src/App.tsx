@@ -227,6 +227,8 @@ const Badge = ({ children, variant = 'blue' }: { children: React.ReactNode, vari
 export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(authStore.getUser());
+  const isAdmin = currentUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'fiches' | 'gammes' | 'settings'>('fiches');
   const [fiches, setFiches] = useState<Fiche[]>([]);
   const [gammes, setGammes] = useState<Gamme[]>([]);
@@ -320,7 +322,9 @@ export default function App() {
     return false;
   });
 
-  const filteredGammes = gammes.filter(g => {
+  const filteredGammes = [...gammes].sort((a, b) =>
+    new Date(b.json_data.generated_at).getTime() - new Date(a.json_data.generated_at).getTime()
+  ).filter(g => {
     // Author filter
     if (gammeAuthorFilter && getGammeAuthor(g) !== gammeAuthorFilter) return false;
 
@@ -451,6 +455,7 @@ export default function App() {
 
     const unsubscribe = authStore.subscribe((token) => {
       setIsAuthenticated(!!token);
+      setCurrentUser(authStore.getUser());
     });
 
     return () => unsubscribe();
@@ -774,18 +779,24 @@ export default function App() {
         </div>
 
         <nav className="hidden md:flex gap-1 bg-white/40 p-1.5 rounded-[20px]">
-          {['fiches', 'gammes', 'settings'].map(t => (
-            <button key={t} onClick={() => {
-              setActiveTab(t as any);
-              if (t !== 'gammes') {
-                setExpandedGammes([]);
-              }
-            }}
-              className={`px-10 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-            >
-              {t === 'settings' ? 'Config' : t}
-            </button>
-          ))}
+          {(['fiches', 'gammes', 'settings'] as const).map(t => {
+            const disabled = t === 'settings' && !isAdmin;
+            return (
+              <button key={t}
+                onClick={() => {
+                  if (disabled) return;
+                  setActiveTab(t);
+                  if (t !== 'gammes') setExpandedGammes([]);
+                }}
+                title={disabled ? 'Accès réservé aux administrateurs' : undefined}
+                className={`px-10 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all
+                  ${activeTab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}
+                  ${disabled ? 'opacity-30 cursor-not-allowed hover:text-slate-500' : ''}`}
+              >
+                {t === 'settings' ? 'Config' : t === 'fiches' ? 'Notes' : t}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="flex items-center gap-2 md:gap-4">
@@ -811,22 +822,28 @@ export default function App() {
       {/* Mobile bottom navigation */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 h-[72px] glass-panel border-t border-white/50 z-50 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)]">
         {([
-          { id: 'fiches', label: 'Fiches', Icon: FileText },
+          { id: 'fiches', label: 'Notes', Icon: FileText },
           { id: 'gammes', label: 'Gammes', Icon: Archive },
           { id: 'settings', label: 'Config', Icon: Settings },
-        ] as const).map(({ id, label, Icon }) => (
+        ] as const).map(({ id, label, Icon }) => {
+          const disabled = id === 'settings' && !isAdmin;
+          return (
           <button
             key={id}
             onClick={() => {
-              setActiveTab(id as any);
+              if (disabled) return;
+              setActiveTab(id);
               if (id !== 'gammes') setExpandedGammes([]);
             }}
-            className={`flex flex-col items-center justify-center gap-1 flex-1 h-full rounded-2xl transition-all ${activeTab === id ? 'text-blue-600' : 'text-slate-400'}`}
+            className={`flex flex-col items-center justify-center gap-1 flex-1 h-full rounded-2xl transition-all
+              ${activeTab === id ? 'text-blue-600' : 'text-slate-400'}
+              ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
           >
             <Icon className={`w-6 h-6 transition-transform ${activeTab === id ? 'scale-110' : ''}`} />
             <span className="text-[10px] font-black uppercase tracking-wider">{label}</span>
           </button>
-        ))}
+          );
+        })}
       </nav>
 
       <main className="pt-28 md:pt-32 px-4 md:px-10 pb-28 md:pb-20 max-w-7xl mx-auto">
@@ -837,7 +854,7 @@ export default function App() {
               <div className="space-y-12">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                   <div className="flex flex-col gap-3">
-                    <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase leading-none flex items-center gap-5"><span className="whitespace-nowrap">Fiches</span> <span className="text-2xl md:text-3xl text-blue-500 bg-blue-500/10 px-4 py-1.5 md:px-5 md:py-2 rounded-[20px] translate-y-1">{fiches.length}</span></h2>
+                    <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase leading-none flex items-center gap-5"><span className="whitespace-nowrap">Notes</span> <span className="text-2xl md:text-3xl text-blue-500 bg-blue-500/10 px-4 py-1.5 md:px-5 md:py-2 rounded-[20px] translate-y-1">{fiches.length}</span></h2>
                     <p className="label-meta opacity-50 max-w-xl">Transformez vos inspections industrielles en gammes structurées d'expert.</p>
                   </div>
 
@@ -886,7 +903,7 @@ export default function App() {
                         type="text"
                         value={ficheSearch}
                         onChange={(e) => setFicheSearch(e.target.value)}
-                        placeholder="Rechercher une fiche (n° maximo, description...)"
+                        placeholder="Rechercher une note (n° maximo, description...)"
                         className="w-full pl-12 pr-10 py-3 bg-white/40 border border-white/60 focus:bg-white/60 focus:border-blue-500 rounded-[18px] text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none transition-all shadow-sm"
                       />
                       {ficheSearch && (
@@ -905,13 +922,15 @@ export default function App() {
                   {filteredFiches.length === 0 && (
                     <div className="glass-card p-12 text-center rounded-[28px] border-2 border-dashed border-white/40">
                       <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-bold text-slate-700">Aucune fiche trouvée</h3>
-                      <p className="text-xs text-slate-500 mt-1">Aucune fiche ne correspond à votre recherche "{ficheSearch}".</p>
+                      <h3 className="text-lg font-bold text-slate-700">Aucune note trouvée</h3>
+                      <p className="text-xs text-slate-500 mt-1">Aucune note ne correspond à votre recherche "{ficheSearch}".</p>
                     </div>
                   )}
                   {filteredFiches.map(f => {
                     const isExpanded = expandedFiches.includes(f._id);
-                    const hasGamme = gammes.some(g => g.json_data?.fiche_id === f._id);
+                    const ficheGammes = gammes
+                      .filter(g => g.json_data?.fiche_id === f._id)
+                      .sort((a, b) => new Date(b.json_data.generated_at).getTime() - new Date(a.json_data.generated_at).getTime());
                     return (
                       <div key={f._id}
                         className="glass-card p-6 rounded-[28px] group transition-all border-2 border-white/80 hover:border-blue-200"
@@ -961,11 +980,30 @@ export default function App() {
                                 title="Appuyez sur Entrée pour sauvegarder"
                               />
                             </div>
-                            <div className="flex items-center gap-1.5 mb-1">
-                              {hasGamme ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600/80">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Gamme générée
-                                </span>
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              {ficheGammes.length > 0 ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600/80 shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {ficheGammes.length} générée{ficheGammes.length > 1 ? 's' : ''}
+                                  </span>
+                                  {ficheGammes.map(g => (
+                                    <button
+                                      key={g._id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveTab('gammes');
+                                        setNewlyGeneratedTime(g.json_data.generated_at);
+                                        setTimeout(() => {
+                                          document.getElementById(`gamme-${g._id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        }, 500);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-widest backdrop-blur-md bg-slate-500/10 text-slate-500 border-slate-500/20 hover:bg-purple-500/10 hover:text-purple-600 hover:border-purple-500/20 transition-all cursor-pointer"
+                                    >
+                                      {g.json_data.machine_number}
+                                      <span className="opacity-50 normal-case tracking-normal font-normal">· {new Date(g.json_data.generated_at).toLocaleDateString('fr-CA')}</span>
+                                    </button>
+                                  ))}
+                                </>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Pas encore générée
@@ -1257,13 +1295,13 @@ export default function App() {
                       >
                         <Download className="w-4 h-4 shrink-0" /> <span className="whitespace-nowrap">CSV</span><span className="hidden md:inline whitespace-nowrap">&nbsp;EXPORT</span>
                       </button>
-                      <button
+                      {false && <button
                         onClick={exportHTML}
                         disabled={selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html)}
                         className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-3 md:px-6 h-12 rounded-[18px] font-black uppercase tracking-widest text-[10px] transition-all ${selectedGammes.length === 0 || !gammes.filter(g => selectedGammes.includes(g._id!)).some(g => g.json_data.raw_html) ? 'bg-slate-200/60 text-slate-400 cursor-not-allowed shadow-inner border border-slate-300' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 cursor-pointer'}`}
                       >
                         <Download className="w-4 h-4 shrink-0" /> <span className="whitespace-nowrap">HTML</span><span className="hidden md:inline whitespace-nowrap">&nbsp;EXPORT</span>
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 </div>
@@ -1290,7 +1328,7 @@ export default function App() {
                     const isHtmlGamme = !!g.json_data.raw_html;
 
                     return (
-                      <div key={g._id}
+                      <div key={g._id} id={`gamme-${g._id}`}
                         className={`glass-card p-6 border-2 transition-all hover:shadow-xl rounded-[28px] ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/10 bg-white/60' :
                           isNewlyGenerated ? 'border-purple-400 ring-2 ring-purple-400/50 shadow-[0_0_30px_rgba(147,51,234,0.4),0_0_30px_rgba(59,130,246,0.4)] bg-gradient-to-r from-blue-50/50 to-purple-50/50' :
                             'border-white/80'
@@ -1441,7 +1479,7 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'settings' && (
+            {activeTab === 'settings' && isAdmin && (
               <div className="max-w-4xl mx-auto space-y-10">
                 <div className="glass-panel p-8 md:p-12 rounded-[40px] shadow-2xl">
                   <div className="flex flex-col md:flex-row md:items-center gap-6 mb-10 justify-between">
@@ -1500,7 +1538,7 @@ export default function App() {
                       className="bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-600 px-4 py-2 rounded-xl outline-none shrink-0 cursor-pointer border border-slate-200 hover:border-slate-300 transition-colors"
                     >
                       <option value="csv">FORMAT: CSV (STRUCTURED)</option>
-                      <option value="html">FORMAT: HTML (RAW)</option>
+                      {false && <option value="html">FORMAT: HTML (RAW)</option>}
                     </select>
 
                     {currentPrompt?.json_data.is_active ? (
