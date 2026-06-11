@@ -8,7 +8,7 @@ interface AuthState {
     accessToken: string | null;
     refreshToken: string | null;
     isHydrated: boolean;
-    user: { name: string; email?: string } | null;
+    user: { name: string; email?: string; role?: string } | null;
 }
 
 type AuthListener = (token: string | null) => void;
@@ -87,7 +87,7 @@ export const authStore = {
         return state.user;
     },
 
-    setUser(user: { name: string; email?: string } | null) {
+    setUser(user: { name: string; email?: string; role?: string } | null) {
         state.user = user;
         notify();
     }
